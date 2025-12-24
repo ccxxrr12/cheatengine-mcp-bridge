@@ -14,7 +14,7 @@ You're staring at gigabytes of memory. Millions of addresses. Thousands of funct
 
 > *"Find all functions that access the player health address."*  
 > *"What's the structure at this pointer? Show me all the fields."*  
-> *"Trace every instruction that writes to this memory—invisibly."*
+> *"Trace every instruction that writes to this memory: invisibly."*
 
 **That's exactly what this does.**
 
