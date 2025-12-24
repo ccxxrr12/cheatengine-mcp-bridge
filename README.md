@@ -200,9 +200,3 @@ Total: 36/37 PASSED (100% success)
 ## License
 
 MIT License - For educational and research purposes only.
-
----
-
-## Keywords
-
-`mcp` `cheat-engine` `memory-analysis` `reverse-engineering` `model-context-protocol` `ai-agents` `python` `lua` `debugging` `game-research`
