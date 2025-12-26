@@ -1,8 +1,12 @@
-![repository-open-graph-template copy](https://github.com/user-attachments/assets/ff56c88c-5613-45c3-9228-644524fcd50e)
+[Demo](https://github.com/user-attachments/assets/a184a006-f569-4b55-858a-ed80a7139035)
 
 # Cheat Engine MCP Bridge
 
-> **Let multibillion $ AI datacenters analyze the game memory for you.** Connect Claude, Cursor, or Copilot directly to Cheat Engine to create mods, trainers, cheats and do anything you want with any program or game in a fraction of a time.
+**Let multibillion $ AI datacenters analyze the program memory for you.**
+
+Connect Claude, Cursor, Copilot or your own AI agents directly to Cheat Engine to create mods, trainers, security audits or do anything else with any program/game in a fraction of a time.
+
+> **Stop clicking through hex dumps and start having conversations with the memory.**
 
 [![Version](https://img.shields.io/badge/version-11.4.0-blue.svg)](#) [![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
 
@@ -14,9 +18,10 @@ You're staring at gigabytes of memory. Millions of addresses. Thousands of funct
 
 **What if you could just ask?**
 
-> *"Find all functions that access the player health address."*  
-> *"What's the structure at this pointer? Show me all the fields."*  
-> *"Trace every instruction that writes to this memory: invisibly."*
+> *"Find the packet decryptor hook."*  
+> *"Find the OPcode of character coordinates."*  
+> *"Find the OPcode of health values."*  
+> *"Find the unique AOB pattern to make my trainer reliable after game updates."*
 
 **That's exactly what this does.**
 
@@ -24,12 +29,12 @@ You're staring at gigabytes of memory. Millions of addresses. Thousands of funct
 
 ## What You Get:
 
-| Before (Manual) | After (AI-Assisted) |
+| Before (Manual) | After (AI Agent + MCP) |
 |-----------------|---------------------|
-| Day 1: Find health value | Minute 1: "Set breakpoint on health" |
-| Day 2: Trace what writes to it | Minute 2: "What function wrote to it?" |
-| Day 3: Find damage function | Minute 3: "Dissect the structure" |
-| Day 4: Document structure | Minute 4: "Generate AOB signature" |
+| Day 1: Find packet address | Minute 1: "Find RX packet decryption hook" |
+| Day 2: Trace what writes to it | Minute 3: "Generate unique AOB signature to make it update persistent" |
+| Day 3: Find RX hook | Minute 6: "Find movement OPcodes" |
+| Day 4: Document structure | Minute 10: "Create python interpreter of hex to plain text" |
 | Day 5: Game updates, start over | **Done.** |
 
 **Your AI can now:**
@@ -39,25 +44,26 @@ You're staring at gigabytes of memory. Millions of addresses. Thousands of funct
 - Identify C++ objects via RTTI: *"This is a CPlayer object"*
 - Disassemble and analyze functions
 - Debug invisibly with hardware breakpoints + Ring -1 hypervisor
+- And much more!
 
 ---
 
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────────────────────────┐
 │  AI Agent (Claude/Cursor/Copilot)                                      │
-│       │                                                                 │
+│       │                                                                │
 │       ▼ MCP Protocol (JSON-RPC over stdio)                             │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │  mcp_cheatengine.py (Python MCP Server)                         │   │
 │  │  - Translates MCP tools to JSON-RPC                             │   │
 │  │  - Connects to \\.\pipe\CE_MCP_Bridge_v99                       │   │
 │  └───────────────────────────┬─────────────────────────────────────┘   │
-│                              │ Named Pipe (Async)                      │
-│                              ▼                                          │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │  CheatEngine (Running, attached to .exe)                        │   │
+│                           ▲  │ Named Pipe (Async)                      │
+│                           │  ▼                                         │
+│  ┌────────────────────────┴────────────────────────────────────────┐   │
+│  │  CheatEngine (Running in DBVM, attached to .exe)                │   │
 │  │  ┌─────────────────────────────────────────────────────────┐    │   │
 │  │  │  ce_mcp_bridge.lua                                      │    │   │
 │  │  │  ┌─────────────────┐      ┌─────────────────────┐       │    │   │
@@ -66,7 +72,7 @@ You're staring at gigabytes of memory. Millions of addresses. Thousands of funct
 │  │  │  └─────────────────┘      └─────────────────────┘       │    │   │
 │  │  └─────────────────────────────────────────────────────────┘    │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -107,7 +113,7 @@ Add to your MCP configuration (e.g., `mcp_config.json`):
   }
 }
 ```
-Don't forget to restart the IDE/RooCode/Cline/Cursor etc if it's not working.
+Restart the IDE to load the MCP server config.
 
 ### 3. Verify Connection
 Use the `ping` tool to verify connectivity:
@@ -124,7 +130,7 @@ Use the `ping` tool to verify connectivity:
 
 ---
 
-## 40+ Tools Available
+## 39 MCP Tools Available
 
 ### Memory
 | Tool | Description |
@@ -157,14 +163,7 @@ And many more at `AI_Context/MCP_Bridge_Command_Reference.md`
 > [!CAUTION]
 > **You MUST disable:** Cheat Engine → Settings → Extra → **"Query memory region routines"**
 > 
-> Enabled: Causes `CLOCK_WATCHDOG_TIMEOUT` BSODs with DBVM/Anti-Cheat conflicts  
-> Disabled: Scanning works perfectly and safely
-
-### Anti-Cheat Safety Rules
-- **DO NOT** use software breakpoints (0xCC/Int3)
-- **DO NOT** write to memory
-- **USE** Hardware Debug Registers (DR0-DR3) only
-- **USE** DBVM for invisible Ring -1 tracing
+> Enabled: Causes `CLOCK_WATCHDOG_TIMEOUT` BSODs due to conflicts with DBVM/Anti-Cheat when scanning protected pages.
 
 ---
 
@@ -193,7 +192,7 @@ AI: "0x00=vtable, 0x08=itemCount(int), 0x10=itemArray(ptr)..."
 MCP_Server/
 ├── mcp_cheatengine.py      # Python MCP Server (FastMCP)
 ├── ce_mcp_bridge.lua   # Cheat Engine Lua Bridge
-└── test_mcp.py # Test Suite (36/37 passing)
+└── test_mcp.py # Test Suite
 
 AI_Context/
 ├── MCP_Bridge_Command_Reference.md   # MCP Commands reference
@@ -227,12 +226,8 @@ Total: 36/37 PASSED (100% success)
 
 ## The Bottom Line
 
-> **Stop clicking through hex dumps and start having conversations with the memory.**
-
 You no longer need to be an expert. Just ask the right questions.
 
----
+⚠️ EDUCATIONAL DISCLAIMER
 
-## License
-
-MIT License - For educational and research purposes only.
+This code is for educational and research purposes only. It's created to show the capabilities of the Model Context Protocol (MCP) and LLM-based debugging. I do not condone the use of these tools for malicious hacking, cheating in multiplayer games, or violating Terms of Service. This is a demonstration of software engineering automation.
