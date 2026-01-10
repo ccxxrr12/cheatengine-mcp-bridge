@@ -1,18 +1,19 @@
+ce_mcp_bridge.lua
 -- ============================================================================
--- CHEATENGINE MCP BRIDGE v11.4 - FORTIFIED EDITION
+-- CHEATENGINE MCP 桥接 v11.4 - 强化版
 -- ============================================================================
--- Combines timer-based pipe communication (v10) with complete command set (v8)
--- This is the PRODUCTION version with all tools for AI-powered reverse engineering
--- v11.4.0: Added robust cleanup on start/stop to prevent zombie breakpoints/watches
---          Ensures clean state on script reload even if resources are active
--- v11.3.1: Universal 32/64-bit handling, improved breakpoint capture, robust analysis
---          Fixed analyze_function, readPointer for pointer chains
+-- 结合基于定时器的管道通信(v10)与完整的命令集(v8)
+-- 这是生产版本，包含所有AI驱动逆向工程工具
+-- v11.4.0: 添加了启动/停止时的健壮清理以防止僵尸断点/监视
+--          确保即使在资源处于活动状态时也能在脚本重载时清理状态
+-- v11.3.1: 通用32/64位处理，改进断点捕获，稳健分析
+--          修复analyze_function, readPointer用于指针链
 -- ============================================================================
 
 local PIPE_NAME = "CE_MCP_Bridge_v99"
 local VERSION = "11.4.0"
 
--- Global State
+-- 全局状态
 local serverState = {
     running = false,
     timer = nil,
@@ -22,38 +23,40 @@ local serverState = {
     scan_foundlist = nil,
     breakpoints = {},
     breakpoint_hits = {},
-    hw_bp_slots = {},      -- Hardware breakpoint slots (max 4)
-    active_watches = {}    -- DBVM watch IDs for hypervisor-level tracing
+    hw_bp_slots = {},      -- 硬件断点槽(最多4个)
+    active_watches = {}    -- 虚拟机管理程序级跟踪的DBVM监视ID
 }
 
 -- ============================================================================
--- UTILITY FUNCTIONS
+-- 工具函数
 -- ============================================================================
 
+-- 将数值转换为十六进制字符串
 local function toHex(num)
     if not num then return "nil" end
-    -- Handle both 32-bit and 64-bit addresses correctly
-    -- Lua numbers are doubles, so we need to handle large integers carefully
+    -- 正确处理32位和64位地址
+    -- Lua数字是双精度，所以我们需要小心处理大整数
     if num < 0 then
-        -- Handle negative numbers (signed interpretation)
+        -- 处理负数(有符号解释)
         return string.format("-0x%X", -num)
     elseif num > 0xFFFFFFFF then
-        -- 64-bit address: use proper formatting
+        -- 64位地址：使用正确格式
         local high = math.floor(num / 0x100000000)
         local low = num % 0x100000000
         return string.format("0x%X%08X", high, low)
     else
-        -- 32-bit address
+        -- 32位地址
         return string.format("0x%08X", num)
     end
 end
 
+-- 日志输出函数
 local function log(msg)
     print("[MCP v" .. VERSION .. "] " .. msg)
 end
 
--- Universal 32/64-bit architecture helper
--- Returns pointer size, whether target is 64-bit, and current stack/instruction pointers
+-- 通用32/64位架构助手
+-- 返回指针大小、目标是否为64位以及当前堆栈/指令指针
 local function getArchInfo()
     local is64 = targetIs64Bit()
     local ptrSize = is64 and 8 or 4
@@ -67,7 +70,7 @@ local function getArchInfo()
     }
 end
 
--- Universal register capture - works for both 32-bit and 64-bit targets
+-- 通用寄存器捕获 - 适用于32位和64位目标
 local function captureRegisters()
     local is64 = targetIs64Bit()
     if is64 then
@@ -109,7 +112,7 @@ local function captureRegisters()
     end
 end
 
--- Universal stack capture - reads stack with correct pointer size
+-- 通用堆栈捕获 - 使用正确的指针大小读取堆栈
 local function captureStack(depth)
     local arch = getArchInfo()
     local stack = {}
@@ -129,15 +132,15 @@ local function captureStack(depth)
 end
 
 -- ============================================================================
--- CLEANUP & SAFETY ROUTINES (CRITICAL FOR ROBUSTNESS)
+-- 清理与安全例程（对健壮性至关重要）
 -- ============================================================================
--- Prevents "zombie" breakpoints and DBVM watches when script is reloaded
+-- 防止脚本重新加载时出现"僵尸"断点和DBVM监视
 
 local function cleanupZombieState()
-    log("Cleaning up zombie resources...")
+    log("正在清理僵尸资源...")
     local cleaned = { breakpoints = 0, dbvm_watches = 0, scans = 0 }
     
-    -- 1. Remove all Hardware Breakpoints managed by us
+    -- 1. 移除所有由我们管理的硬件断点
     if serverState.breakpoints then
         for id, bp in pairs(serverState.breakpoints) do
             if bp.address then
@@ -147,7 +150,7 @@ local function cleanupZombieState()
         end
     end
     
-    -- 2. Stop all DBVM Watches
+    -- 2. 停止所有DBVM监视
     if serverState.active_watches then
         for key, watch in pairs(serverState.active_watches) do
             if watch.id then
@@ -157,7 +160,7 @@ local function cleanupZombieState()
         end
     end
 
-    -- 3. Cleanup Scan memory objects
+    -- 3. 清理扫描内存对象
     if serverState.scan_memscan then
         pcall(function() serverState.scan_memscan.destroy() end)
         serverState.scan_memscan = nil
@@ -168,14 +171,14 @@ local function cleanupZombieState()
         serverState.scan_foundlist = nil
     end
 
-    -- Reset all tracking tables
+    -- 重置所有跟踪表
     serverState.breakpoints = {}
     serverState.breakpoint_hits = {}
     serverState.hw_bp_slots = {}
     serverState.active_watches = {}
     
     if cleaned.breakpoints > 0 or cleaned.dbvm_watches > 0 or cleaned.scans > 0 then
-        log(string.format("Cleaned: %d breakpoints, %d DBVM watches, %d scans", 
+        log(string.format("已清理: %d 个断点, %d 个DBVM监视, %d 个扫描", 
             cleaned.breakpoints, cleaned.dbvm_watches, cleaned.scans))
     end
     
@@ -183,7 +186,7 @@ local function cleanupZombieState()
 end
 
 -- ============================================================================
--- JSON LIBRARY (Pure Lua - Complete Implementation)
+-- JSON库（纯Lua - 完整实现）
 -- ============================================================================
 local json = {}
 local encode
@@ -289,22 +292,22 @@ end
 json.decode = decode
 
 -- ============================================================================
--- COMMAND HANDLERS - PROCESS & MODULES
+-- 命令处理程序 - 进程和模块
 -- ============================================================================
 
 local function cmd_get_process_info(params)
-    -- FORCE REFRESH: Tell CE to try and reload symbols using current DBVM rights
+    -- 强制刷新：告诉CE尝试使用当前DBVM权限重新加载符号
     pcall(reinitializeSymbolhandler)
     
     local pid = getOpenedProcessID()
     if pid and pid > 0 then
-        -- Get modules using the same logic as enum_modules (with AOB fallback)
+        -- 使用与enum_modules相同的逻辑获取模块（带有AOB回退）
         local modules = enumModules(pid)
         if not modules or #modules == 0 then
             modules = enumModules()
         end
         
-        -- Build module list
+        -- 构建模块列表
         local moduleList = {}
         local mainModuleName = nil
         local usedAobFallback = false
@@ -323,7 +326,7 @@ local function cmd_get_process_info(params)
             end
         end
         
-        -- If still no modules, try AOB fallback for PE headers with EXPORT DIRECTORY name reading
+        -- 如果仍然没有模块，尝试AOB回退来查找PE头并读取导出目录名称
         if #moduleList == 0 then
             usedAobFallback = true
             local mzScan = AOBScan("4D 5A 90 00 03 00 00 00")
@@ -336,15 +339,15 @@ local function cmd_get_process_info(params)
                         local realName = nil
                         
                         if peOffset and peOffset > 0 and peOffset < 0x1000 then
-                            -- Get Size of Image
+                            -- 获取映像大小
                             local sizeOfImage = readInteger(addr + peOffset + 0x50)
                             if sizeOfImage then moduleSize = sizeOfImage end
                             
-                            -- TRY TO READ INTERNAL NAME FROM EXPORT DIRECTORY
-                            -- PE Header + 0x78 is the Data Directory for Exports (32-bit)
+                            -- 尝试从导出目录读取内部名称
+                            -- PE头+0x78是导出数据目录(32位)
                             local exportRVA = readInteger(addr + peOffset + 0x78)
                             if exportRVA and exportRVA > 0 and exportRVA < 0x10000000 then
-                                -- Export Directory + 0x0C is the Name RVA
+                                -- 导出目录+0x0C是名称RVA
                                 local nameRVA = readInteger(addr + exportRVA + 0x0C)
                                 if nameRVA and nameRVA > 0 and nameRVA < 0x10000000 then
                                     local name = readString(addr + nameRVA, 64)
@@ -355,12 +358,12 @@ local function cmd_get_process_info(params)
                             end
                         end
                         
-                        -- Determine module name
+                        -- 确定模块名称
                         local modName
                         if realName then
                             modName = realName
                         elseif i == 0 then
-                            -- First module is likely main exe - use process name or L2.exe
+                            -- 第一个模块可能是主exe - 使用进程名称或L2.exe
                             modName = (process ~= "" and process) or "L2.exe"
                         else
                             modName = "Module_" .. string.format("%X", addr)
@@ -380,9 +383,9 @@ local function cmd_get_process_info(params)
             end
         end
         
-        -- Use real process name if available, otherwise default to L2.exe
-        -- IMPORTANT: Do NOT use mainModuleName from AOB scan - it's just the first DLL in memory order
-        -- which could be anything. When anti-cheat hides the process, we hardcode L2.exe.
+        -- 如果可用则使用实际进程名称，否则默认为L2.exe
+        -- 重要：不要使用AOB扫描的mainModuleName - 它只是按内存顺序排列的第一个DLL
+        -- 这可能是任何东西。当反作弊隐藏进程时，我们硬编码L2.exe。
         local name = (process ~= "" and process) or "L2.exe"
         
         return { 
@@ -394,14 +397,14 @@ local function cmd_get_process_info(params)
             used_aob_fallback = usedAobFallback
         }
     end
-    return { success = false, error = "No process attached" }
+    return { success = false, error = "未附加进程" }
 end
 
 local function cmd_enum_modules(params)
     local pid = getOpenedProcessID()
-    local modules = enumModules(pid)  -- Try with PID first
+    local modules = enumModules(pid)  -- 首先尝试PID
     
-    -- If that fails, try without PID
+    -- 如果失败，尝试不带PID
     if not modules or #modules == 0 then
         modules = enumModules()
     end
@@ -421,9 +424,9 @@ local function cmd_enum_modules(params)
         end
     end
     
-    -- Fallback: If no modules found, try to find them via MZ header scan with Export Directory name reading
+    -- 回退：如果找不到模块，尝试通过MZ头扫描和导出目录名称读取来查找它们
     if #result == 0 then
-        local mzScan = AOBScan("4D 5A 90 00 03 00 00 00")  -- MZ PE header
+        local mzScan = AOBScan("4D 5A 90 00 03 00 00 00")  -- MZ PE头
         if mzScan and mzScan.Count > 0 then
             for i = 0, math.min(mzScan.Count - 1, 50) do
                 local addr = tonumber(mzScan.getString(i), 16)
@@ -433,11 +436,11 @@ local function cmd_enum_modules(params)
                     local realName = nil
                     
                     if peOffset and peOffset > 0 and peOffset < 0x1000 then
-                        -- Get Size of Image
+                        -- 获取映像大小
                         local sizeOfImage = readInteger(addr + peOffset + 0x50)
                         if sizeOfImage then moduleSize = sizeOfImage end
                         
-                        -- READ INTERNAL NAME FROM EXPORT DIRECTORY
+                        -- 从导出目录读取内部名称
                         local exportRVA = readInteger(addr + peOffset + 0x78)
                         if exportRVA and exportRVA > 0 and exportRVA < 0x10000000 then
                             local nameRVA = readInteger(addr + exportRVA + 0x0C)
@@ -450,7 +453,7 @@ local function cmd_enum_modules(params)
                         end
                     end
                     
-                    -- Determine module name
+                    -- 确定模块名称
                     local modName
                     if realName then
                         modName = realName
@@ -479,28 +482,28 @@ end
 
 local function cmd_get_symbol_address(params)
     local symbol = params.symbol or params.name
-    if not symbol then return { success = false, error = "No symbol name" } end
+    if not symbol then return { success = false, error = "没有符号名" } end
     
     local addr = getAddressSafe(symbol)
     if addr then
         return { success = true, symbol = symbol, address = toHex(addr), value = addr }
     end
-    return { success = false, error = "Symbol not found: " .. symbol }
+    return { success = false, error = "符号未找到: " .. symbol }
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - MEMORY READ
+-- 命令处理程序 - 内存读取
 -- ============================================================================
 
 local function cmd_read_memory(params)
     local addr = params.address
-    local size = math.min(params.size or 256, 65536)
+    local size = math.min(params.size or 256, 65536)  -- 限制最大读取大小
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local bytes = readBytes(addr, size, true)
-    if not bytes then return { success = false, error = "Failed to read at " .. toHex(addr) } end
+    if not bytes then return { success = false, error = "在 " .. toHex(addr) .. " 读取失败" } end
     
     local hex = {}
     for i, b in ipairs(bytes) do hex[i] = string.format("%02X", b) end
@@ -519,7 +522,7 @@ local function cmd_read_integer(params)
     local itype = params.type or "dword"
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local val
     if itype == "byte" then
@@ -530,9 +533,9 @@ local function cmd_read_integer(params)
     elseif itype == "qword" then val = readQword(addr)
     elseif itype == "float" then val = readFloat(addr)
     elseif itype == "double" then val = readDouble(addr)
-    else return { success = false, error = "Unknown type: " .. tostring(itype) } end
+    else return { success = false, error = "未知类型: " .. tostring(itype) } end
     
-    if val == nil then return { success = false, error = "Failed to read at " .. toHex(addr) } end
+    if val == nil then return { success = false, error = "在 " .. toHex(addr) .. " 读取失败" } end
     
     return { success = true, address = toHex(addr), value = val, type = itype, hex = toHex(val) }
 end
@@ -543,11 +546,11 @@ local function cmd_read_string(params)
     local wide = params.wide or false
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local str = readString(addr, maxlen, wide)
     
-    -- Sanitize non-printable characters for JSON compatibility
+    -- 为JSON兼容性清理不可打印字符
     local sanitized = ""
     if str then
         for i = 1, #str do
@@ -555,7 +558,7 @@ local function cmd_read_string(params)
             if byte >= 32 and byte < 127 then
                 sanitized = sanitized .. str:sub(i, i)
             elseif byte == 9 or byte == 10 or byte == 13 then
-                sanitized = sanitized .. " "  -- Replace tabs/newlines with space
+                sanitized = sanitized .. " "  -- 用空格替换制表符/换行符
             else
                 sanitized = sanitized .. string.format("\\x%02X", byte)
             end
@@ -570,22 +573,22 @@ local function cmd_read_pointer(params)
     local offsets = params.offsets or {}
     
     if type(base) == "string" then base = getAddressSafe(base) end
-    if not base then return { success = false, error = "Invalid base address" } end
+    if not base then return { success = false, error = "无效基地址" } end
     
     local currentAddr = base
     local path = { toHex(base) }
     
     for i, offset in ipairs(offsets) do
-        -- Use readPointer for 32/64-bit compatibility (readInteger on 32-bit, readQword on 64-bit)
+        -- 使用readPointer进行32/64位兼容（32位上readInteger，64位上readQword）
         local ptr = readPointer(currentAddr)
         if not ptr then
-            return { success = false, error = "Failed to read pointer at " .. toHex(currentAddr), path = path }
+            return { success = false, error = "在 " .. toHex(currentAddr) .. " 读取指针失败", path = path }
         end
         currentAddr = ptr + offset
         table.insert(path, toHex(currentAddr))
     end
     
-    -- Read final value using readPointer for 32/64-bit compatibility
+    -- 使用readPointer进行32/64位兼容读取最终值
     local finalValue = readPointer(currentAddr)
     return { 
         success = true, 
@@ -597,7 +600,7 @@ local function cmd_read_pointer(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - PATTERN SCANNING
+-- 命令处理程序 - 模式扫描
 -- ============================================================================
 
 local function cmd_aob_scan(params)
@@ -605,7 +608,7 @@ local function cmd_aob_scan(params)
     local protection = params.protection or "+X"
     local limit = params.limit or 100
     
-    if not pattern then return { success = false, error = "No pattern provided" } end
+    if not pattern then return { success = false, error = "没有提供模式" } end
     
     local results = AOBScan(pattern, protection)
     if not results then return { success = true, count = 0, addresses = {} } end
@@ -639,8 +642,8 @@ local function cmd_scan_all(params)
     elseif vtype == "double" then varType = vtDouble
     elseif vtype == "string" then varType = vtString end
     
-    -- Use specific protection flags if provided (defaults to +W-C from Python)
-    -- CRITICAL: Limit scan to User Mode space (0x7FFFFFFFFFFFFFFF) to prevent BSODs in Kernel/Guard regions
+    -- 如果提供了特定保护标志则使用（默认为Python中的+W-C）
+    -- 关键：限制扫描到用户模式空间(0x7FFFFFFFFFFFFFFF)以防止内核/保护区域中的蓝屏
     local protect = params.protection or "+W-C"
     ms.firstScan(scanOpt, varType, rtRounded, tostring(value), nil, 0, 0x7FFFFFFFFFFFFFFF, protect, fsmNotAligned, "1", false, false, false, false)
     ms.waitTillDone()
@@ -659,7 +662,7 @@ local function cmd_get_scan_results(params)
     local max = params.max or 100
     
     if not serverState.scan_foundlist then 
-        return { success = false, error = "No scan results. Run scan_all first." } 
+        return { success = false, error = "没有扫描结果。请先运行scan_all。" } 
     end
     
     local fl = serverState.scan_foundlist
@@ -667,7 +670,7 @@ local function cmd_get_scan_results(params)
     local count = math.min(fl.getCount(), max)
     
     for i = 0, count - 1 do
-        -- IMPORTANT: Ensure address has 0x prefix for consistency with all other commands
+        -- 重要：确保地址有0x前缀以与其他所有命令保持一致
         local addrStr = fl.getAddress(i)
         if addrStr and not addrStr:match("^0x") and not addrStr:match("^0X") then
             addrStr = "0x" .. addrStr
@@ -682,7 +685,7 @@ local function cmd_get_scan_results(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - DISASSEMBLY & ANALYSIS
+-- 命令处理程序 - 反汇编和分析
 -- ============================================================================
 
 local function cmd_disassemble(params)
@@ -690,7 +693,7 @@ local function cmd_disassemble(params)
     local count = params.count or 20
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local instructions = {}
     local currentAddr = addr
@@ -722,11 +725,11 @@ local function cmd_get_instruction_info(params)
     local addr = params.address
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local ok, disasm = pcall(disassemble, addr)
     if not ok or not disasm then
-        return { success = false, error = "Failed to disassemble at " .. toHex(addr) }
+        return { success = false, error = "在 " .. toHex(addr) .. " 反汇编失败" }
     end
     local size = getInstructionSize(addr)
     local bytes = readBytes(addr, size or 1, true) or {}
@@ -750,13 +753,13 @@ local function cmd_find_function_boundaries(params)
     local maxSearch = params.max_search or 4096
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local is64 = targetIs64Bit()
     
-    -- Search backwards for function prologue
-    -- 32-bit: push ebp; mov ebp, esp (55 8B EC)
-    -- 64-bit: push rbp; mov rbp, rsp (55 48 89 E5) or sub rsp, X patterns
+    -- 向后搜索函数前言
+    -- 32位: push ebp; mov ebp, esp (55 8B EC)
+    -- 64位: push rbp; mov rbp, rsp (55 48 89 E5) 或 sub rsp, X 模式
     local funcStart = nil
     local prologueType = nil
     for offset = 0, maxSearch do
@@ -766,21 +769,21 @@ local function cmd_find_function_boundaries(params)
         local b3 = readBytes(checkAddr + 2, 1, false)
         local b4 = readBytes(checkAddr + 3, 1, false)
         
-        -- 32-bit prologue: push ebp; mov ebp, esp (55 8B EC)
+        -- 32位前言: push ebp; mov ebp, esp (55 8B EC)
         if b1 == 0x55 and b2 == 0x8B and b3 == 0xEC then
             funcStart = checkAddr
             prologueType = "x86_standard"
             break
         end
         
-        -- 64-bit prologue: push rbp; mov rbp, rsp (55 48 89 E5)
+        -- 64位前言: push rbp; mov rbp, rsp (55 48 89 E5)
         if is64 and b1 == 0x55 and b2 == 0x48 and b3 == 0x89 and b4 == 0xE5 then
             funcStart = checkAddr
             prologueType = "x64_standard"
             break
         end
         
-        -- 64-bit alternative: sub rsp, imm8 (48 83 EC xx) - common in leaf functions
+        -- 64位替代: sub rsp, imm8 (48 83 EC xx) - 在叶子函数中常见
         if is64 and b1 == 0x48 and b2 == 0x83 and b3 == 0xEC then
             funcStart = checkAddr
             prologueType = "x64_leaf"
@@ -788,7 +791,7 @@ local function cmd_find_function_boundaries(params)
         end
     end
     
-    -- Search forwards for return instruction
+    -- 向前搜索返回指令
     local funcEnd = nil
     if funcStart then
         for offset = 0, maxSearch do
@@ -800,30 +803,29 @@ local function cmd_find_function_boundaries(params)
         end
     end
     
-    local found = funcStart ~= nil
-    
-    return {
-        success = true,
-        found = found,
-        query_address = toHex(addr),
-        function_start = funcStart and toHex(funcStart) or nil,
-        function_end = funcEnd and toHex(funcEnd) or nil,
-        function_size = (funcStart and funcEnd) and (funcEnd - funcStart + 1) or nil,
-        prologue_type = prologueType,
-        arch = is64 and "x64" or "x86",
-        note = not found and "No standard function prologue found within search range" or nil
-    }
+    if funcStart then
+        return {
+            success = true,
+            start = toHex(funcStart),
+            start_offset = funcStart - addr,
+            end_addr = funcEnd and toHex(funcEnd) or nil,
+            end_offset = funcEnd and (funcEnd - addr) or nil,
+            prologue_type = prologueType
+        }
+    else
+        return { success = false, error = "在 " .. maxSearch .. " 字节内未找到函数前言" }
+    end
 end
 
 local function cmd_analyze_function(params)
     local addr = params.address
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local is64 = targetIs64Bit()
     
-    -- Find function start using architecture-aware prologue detection
+    -- 使用架构感知的前言检测查找函数开始
     local funcStart = nil
     local prologueType = nil
     for offset = 0, 4096 do
@@ -833,21 +835,21 @@ local function cmd_analyze_function(params)
         local b3 = readBytes(checkAddr + 2, 1, false)
         local b4 = readBytes(checkAddr + 3, 1, false)
         
-        -- 32-bit prologue: push ebp; mov ebp, esp (55 8B EC)
+        -- 32位前言: push ebp; mov ebp, esp (55 8B EC)
         if b1 == 0x55 and b2 == 0x8B and b3 == 0xEC then
             funcStart = checkAddr
             prologueType = "x86_standard"
             break
         end
         
-        -- 64-bit prologue: push rbp; mov rbp, rsp (55 48 89 E5)
+        -- 64位前言: push rbp; mov rbp, rsp (55 48 89 E5)
         if is64 and b1 == 0x55 and b2 == 0x48 and b3 == 0x89 and b4 == 0xE5 then
             funcStart = checkAddr
             prologueType = "x64_standard"
             break
         end
         
-        -- 64-bit alternative: sub rsp, imm8 (48 83 EC xx)
+        -- 64位替代: sub rsp, imm8 (48 83 EC xx)
         if is64 and b1 == 0x48 and b2 == 0x83 and b3 == 0xEC then
             funcStart = checkAddr
             prologueType = "x64_leaf"
@@ -858,13 +860,13 @@ local function cmd_analyze_function(params)
     if not funcStart then 
         return { 
             success = false, 
-            error = "Could not find function start",
+            error = "找不到函数开始",
             arch = is64 and "x64" or "x86",
             query_address = toHex(addr)
         } 
     end
     
-    -- Analyze calls within function
+    -- 分析函数内的调用
     local calls = {}
     local funcEnd = nil
     local currentAddr = funcStart
@@ -879,8 +881,8 @@ local function cmd_analyze_function(params)
             break
         end
         
-        -- Detect CALL instructions
-        -- E8 xx xx xx xx = relative CALL (most common)
+        -- 检测CALL指令
+        -- E8 xx xx xx xx = 相对CALL（最常见）
         if b1 == 0xE8 then
             local relOffset = readInteger(currentAddr + 1)
             if relOffset then
@@ -893,7 +895,7 @@ local function cmd_analyze_function(params)
             end
         end
         
-        -- FF /2 = indirect CALL (CALL r/m32 or CALL r/m64)
+        -- FF /2 = 间接CALL (CALL r/m32 或 CALL r/m64)
         if b1 == 0xFF then
             local b2 = readBytes(currentAddr + 1, 1, false)
             if b2 and (b2 >= 0x10 and b2 <= 0x1F) then  -- ModR/M for /2
@@ -921,7 +923,7 @@ local function cmd_analyze_function(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - REFERENCE FINDING
+-- 命令处理程序 - 引用查找
 -- ============================================================================
 
 local function cmd_find_references(params)
@@ -929,14 +931,14 @@ local function cmd_find_references(params)
     local limit = params.limit or 50
     
     if type(targetAddr) == "string" then targetAddr = getAddressSafe(targetAddr) end
-    if not targetAddr then return { success = false, error = "Invalid address" } end
+    if not targetAddr then return { success = false, error = "无效地址" } end
     
     local is64 = targetIs64Bit()
     local pattern
     
-    -- Convert address to AOB pattern (little-endian)
+    -- 将地址转换为AOB模式（小端序）
     if is64 and targetAddr > 0xFFFFFFFF then
-        -- 64-bit address: 8 bytes little-endian
+        -- 64位地址：8字节小端序
         local bytes = {}
         local tempAddr = targetAddr
         for i = 1, 8 do
@@ -946,7 +948,7 @@ local function cmd_find_references(params)
         pattern = string.format("%02X %02X %02X %02X %02X %02X %02X %02X", 
             bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8])
     else
-        -- 32-bit address: 4 bytes little-endian
+        -- 32位地址：4字节小端序
         local b1 = targetAddr % 256
         local b2 = math.floor(targetAddr / 256) % 256
         local b3 = math.floor(targetAddr / 65536) % 256
@@ -976,7 +978,7 @@ local function cmd_find_call_references(params)
     local limit = params.limit or 100
     
     if type(funcAddr) == "string" then funcAddr = getAddressSafe(funcAddr) end
-    if not funcAddr then return { success = false, error = "Invalid function address" } end
+    if not funcAddr then return { success = false, error = "无效函数地址" } end
     
     local callers = {}
     local results = AOBScan("E8 ?? ?? ?? ??", "+X")
@@ -1007,7 +1009,7 @@ local function cmd_find_call_references(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - BREAKPOINTS
+-- 命令处理程序 - 断点
 -- ============================================================================
 
 local function cmd_set_breakpoint(params)
@@ -1018,11 +1020,11 @@ local function cmd_set_breakpoint(params)
     local stackDepth = params.stack_depth or 16
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     bpId = bpId or tostring(addr)
     
-    -- Find free hardware slot (max 4 debug registers)
+    -- 查找空闲的硬件槽（最多4个调试寄存器）
     local slot = nil
     for i = 1, 4 do
         if not serverState.hw_bp_slots[i] then
@@ -1032,16 +1034,16 @@ local function cmd_set_breakpoint(params)
     end
     
     if not slot then
-        return { success = false, error = "No free hardware breakpoint slots (max 4 debug registers)" }
+        return { success = false, error = "没有空闲的硬件断点槽（最多4个调试寄存器）" }
     end
     
-    -- Remove existing breakpoint at this address
+    -- 移除此地址的现有断点
     pcall(function() debug_removeBreakpoint(addr) end)
     
     serverState.breakpoint_hits[bpId] = {}
     
-    -- CRITICAL: Use bpmDebugRegister for hardware breakpoints (anti-cheat safe)
-    -- Signature: debug_setBreakpoint(address, size, trigger, breakpointmethod, function)
+    -- 关键：使用bpmDebugRegister用于硬件断点（反作弊安全）
+    -- 签名：debug_setBreakpoint(address, size, trigger, breakpointmethod, function)
     debug_setBreakpoint(addr, 1, bptExecute, bpmDebugRegister, function()
         local hitData = {
             id = bpId,
@@ -1075,11 +1077,11 @@ local function cmd_set_data_breakpoint(params)
     local size = params.size or 4
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     bpId = bpId or tostring(addr)
     
-    -- Find free hardware slot (max 4 debug registers)
+    -- 查找空闲的硬件槽（最多4个调试寄存器）
     local slot = nil
     for i = 1, 4 do
         if not serverState.hw_bp_slots[i] then
@@ -1089,7 +1091,7 @@ local function cmd_set_data_breakpoint(params)
     end
     
     if not slot then
-        return { success = false, error = "No free hardware breakpoint slots (max 4 debug registers)" }
+        return { success = false, error = "没有空闲的硬件断点槽（最多4个调试寄存器）" }
     end
     
     local bpType = bptWrite
@@ -1098,8 +1100,8 @@ local function cmd_set_data_breakpoint(params)
     
     serverState.breakpoint_hits[bpId] = {}
     
-    -- CRITICAL: Use bpmDebugRegister for hardware breakpoints (anti-cheat safe)
-    -- Signature: debug_setBreakpoint(address, size, trigger, breakpointmethod, function)
+    -- 关键：使用bpmDebugRegister用于硬件断点（反作弊安全）
+    -- 签名：debug_setBreakpoint(address, size, trigger, breakpointmethod, function)
     debug_setBreakpoint(addr, size, bpType, bpmDebugRegister, function()
         local arch = getArchInfo()
         local instPtr = arch.instPtr
@@ -1141,7 +1143,7 @@ local function cmd_remove_breakpoint(params)
         return { success = true, id = bpId }
     end
     
-    return { success = false, error = "Breakpoint not found: " .. tostring(bpId) }
+    return { success = false, error = "找不到断点: " .. tostring(bpId) }
 end
 
 local function cmd_get_breakpoint_hits(params)
@@ -1153,7 +1155,7 @@ local function cmd_get_breakpoint_hits(params)
         hits = serverState.breakpoint_hits[bpId] or {}
         if clear then serverState.breakpoint_hits[bpId] = {} end
     else
-        -- Get all hits
+        -- 获取所有命中
         hits = {}
         for id, hitsForBp in pairs(serverState.breakpoint_hits) do
             for _, hit in ipairs(hitsForBp) do
@@ -1192,38 +1194,38 @@ local function cmd_clear_all_breakpoints(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - LUA EVALUATION
+-- 命令处理程序 - Lua求值
 -- ============================================================================
 
 local function cmd_evaluate_lua(params)
     local code = params.code
-    if not code then return { success = false, error = "No code provided" } end
+    if not code then return { success = false, error = "没有提供代码" } end
     
     local fn, err = loadstring(code)
-    if not fn then return { success = false, error = "Compile error: " .. tostring(err) } end
+    if not fn then return { success = false, error = "编译错误: " .. tostring(err) } end
     
     local ok, result = pcall(fn)
-    if not ok then return { success = false, error = "Runtime error: " .. tostring(result) } end
+    if not ok then return { success = false, error = "运行时错误: " .. tostring(result) } end
     
     return { success = true, result = tostring(result) }
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - MEMORY REGIONS
+-- 命令处理程序 - 内存区域
 -- ============================================================================
 
 local function cmd_get_memory_regions(params)
     local regions = {}
     local maxRegions = params.max or 100
-    local pageSize = 0x1000  -- 4KB pages
+    local pageSize = 0x1000  -- 4KB页
     
-    -- Sample memory at common base addresses to find valid regions
+    -- 在常见基址处采样内存以查找有效区域
     local sampleAddresses = {
         0x00010000, 0x00400000, 0x10000000, 0x20000000, 0x30000000,
         0x40000000, 0x50000000, 0x60000000, 0x70000000
     }
     
-    -- Also add addresses from modules we found via AOB scan
+    -- 还添加通过AOB扫描找到的模块地址
     local mzScan = AOBScan("4D 5A 90 00 03 00")
     if mzScan and mzScan.Count > 0 then
         for i = 0, math.min(mzScan.Count - 1, 20) do
@@ -1233,19 +1235,19 @@ local function cmd_get_memory_regions(params)
         mzScan.destroy()
     end
     
-    -- Check each sample address for memory protection
+    -- 检查每个采样地址的内存保护
     for _, baseAddr in ipairs(sampleAddresses) do
         if #regions >= maxRegions then break end
         
         local ok, prot = pcall(getMemoryProtection, baseAddr)
         if ok and prot then
-            -- Found a valid memory page
+            -- 找到有效的内存页
             local protStr = ""
             if prot.r then protStr = protStr .. "R" end
             if prot.w then protStr = protStr .. "W" end
             if prot.x then protStr = protStr .. "X" end
             
-            -- Try to find region size by scanning forward
+            -- 尝试通过向前扫描查找区域大小
             local regionSize = pageSize
             for offset = pageSize, 0x1000000, pageSize do
                 local ok2, prot2 = pcall(getMemoryProtection, baseAddr + offset)
@@ -1271,7 +1273,7 @@ local function cmd_get_memory_regions(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - UTILITY
+-- 命令处理程序 - 实用工具
 -- ============================================================================
 
 local function cmd_ping(params)
@@ -1280,7 +1282,7 @@ local function cmd_ping(params)
         version = VERSION,
         timestamp = os.time(),
         process_id = getOpenedProcessID() or 0,
-        message = "CE MCP Bridge v" .. VERSION .. " alive"
+        message = "CE MCP Bridge v" .. VERSION .. " 运行中"
     }
 end
 
@@ -1289,9 +1291,9 @@ local function cmd_search_string(params)
     local wide = params.wide or false
     local limit = params.limit or 100
     
-    if not searchStr then return { success = false, error = "No search string" } end
+    if not searchStr then return { success = false, error = "没有搜索字符串" } end
     
-    -- Convert string to AOB pattern
+    -- 将字符串转换为AOB模式
     local pattern = ""
     for i = 1, #searchStr do
         if i > 1 then pattern = pattern .. " " end
@@ -1317,24 +1319,24 @@ local function cmd_search_string(params)
 end
 
 -- ============================================================================
--- COMMAND HANDLERS - HIGH-LEVEL ANALYSIS TOOLS
+-- 命令处理程序 - 高级分析工具
 -- ============================================================================
 
--- Dissect Structure: Uses CE's Structure.autoGuess to map memory into typed fields
+-- 解析结构：使用CE的Structure.autoGuess将内存映射到类型化字段
 local function cmd_dissect_structure(params)
     local address = params.address
     local size = params.size or 256
     
     if type(address) == "string" then address = getAddressSafe(address) end
-    if not address then return { success = false, error = "Invalid address" } end
+    if not address then return { success = false, error = "无效地址" } end
     
-    -- Create a temporary structure and use autoGuess
+    -- 创建临时结构并使用autoGuess
     local ok, struct = pcall(createStructure, "MCP_TempStruct")
     if not ok or not struct then
-        return { success = false, error = "Failed to create structure" }
+        return { success = false, error = "创建结构失败" }
     end
     
-    -- Use the Structure class autoGuess method
+    -- 使用Structure类的autoGuess方法
     pcall(function() struct:autoGuess(address, 0, size) end)
     
     local elements = {}
@@ -1344,7 +1346,7 @@ local function cmd_dissect_structure(params)
         local elem = struct.Element[i]
         if elem then
             local val = nil
-            -- Try to get current value
+            -- 尝试获取当前值
             pcall(function() val = elem:getValue(address) end)
             
             table.insert(elements, {
@@ -1358,7 +1360,7 @@ local function cmd_dissect_structure(params)
         end
     end
     
-    -- Cleanup - don't add to global list
+    -- 清理 - 不添加到全局列表
     pcall(function() struct:removeFromGlobalStructureList() end)
     
     return {
@@ -1370,7 +1372,7 @@ local function cmd_dissect_structure(params)
     }
 end
 
--- Get Thread List: Returns all threads in the attached process
+-- 获取线程列表：返回附加进程中所有线程
 local function cmd_get_thread_list(params)
     local list = createStringlist()
     getThreadlist(list)
@@ -1393,12 +1395,12 @@ local function cmd_get_thread_list(params)
     }
 end
 
--- AutoAssemble: Execute an AutoAssembler script
+-- AutoAssemble：执行AutoAssembler脚本
 local function cmd_auto_assemble(params)
     local script = params.script or params.code
     local disable = params.disable or false
     
-    if not script then return { success = false, error = "No script provided" } end
+    if not script then return { success = false, error = "没有提供脚本" } end
     
     local success, disableInfo = autoAssemble(script)
     
@@ -1407,7 +1409,7 @@ local function cmd_auto_assemble(params)
             success = true,
             executed = true
         }
-        -- If disable info is returned, include symbol addresses
+        -- 如果返回disable信息，包含符号地址
         if disableInfo and disableInfo.symbols then
             result.symbols = {}
             for name, addr in pairs(disableInfo.symbols) do
@@ -1418,30 +1420,30 @@ local function cmd_auto_assemble(params)
     else
         return {
             success = false,
-            error = "AutoAssemble failed: " .. tostring(disableInfo)
+            error = "AutoAssemble失败: " .. tostring(disableInfo)
         }
     end
 end
 
--- Enum Memory Regions Full: Uses CE's native enumMemoryRegions for accurate data
+-- 枚举内存区域完整：使用CE的原生enumMemoryRegions获取准确数据
 local function cmd_enum_memory_regions_full(params)
     local maxRegions = params.max or 500
     
     local ok, regions = pcall(enumMemoryRegions)
     if not ok or not regions then
-        return { success = false, error = "enumMemoryRegions failed" }
+        return { success = false, error = "enumMemoryRegions失败" }
     end
     
     local result = {}
     for i, r in ipairs(regions) do
         if i > maxRegions then break end
         
-        -- Determine protection string
+        -- 确定保护字符串
         local prot = r.Protect or 0
         local state = r.State or 0
         local protStr = ""
         
-        -- PAGE_EXECUTE flags
+        -- PAGE_EXECUTE标志
         if prot == 0x10 then protStr = "X"
         elseif prot == 0x20 then protStr = "RX"
         elseif prot == 0x40 then protStr = "RWX"
@@ -1460,7 +1462,7 @@ local function cmd_enum_memory_regions_full(params)
             protect = prot,
             protect_string = protStr,
             type = r.Type or 0,
-            -- State decoded
+            -- 状态解码
             is_committed = state == 0x1000,
             is_reserved = state == 0x2000,
             is_free = state == 0x10000
@@ -1474,30 +1476,30 @@ local function cmd_enum_memory_regions_full(params)
     }
 end
 
--- Read Pointer Chain: Follow a chain of pointers to resolve dynamic addresses
+-- 读取指针链：跟随指针链以解析动态地址
 local function cmd_read_pointer_chain(params)
     local base = params.base
     local offsets = params.offsets or {}
     
     if type(base) == "string" then base = getAddressSafe(base) end
-    if not base then return { success = false, error = "Invalid base address" } end
+    if not base then return { success = false, error = "无效基地址" } end
     
     local currentAddr = base
     local chain = { { step = 0, address = toHex(currentAddr), description = "base" } }
     
     for i, offset in ipairs(offsets) do
-        -- Read pointer at current address
+        -- 读取当前地址的指针
         local ptr = readPointer(currentAddr)
         if not ptr then
             return {
                 success = false,
-                error = "Failed to read pointer at step " .. i,
+                error = "在第 " .. i .. " 步读取指针失败",
                 partial_chain = chain,
                 failed_at_address = toHex(currentAddr)
             }
         end
         
-        -- Apply offset
+        -- 应用偏移
         currentAddr = ptr + offset
         table.insert(chain, {
             step = i,
@@ -1508,7 +1510,7 @@ local function cmd_read_pointer_chain(params)
         })
     end
     
-    -- Try to read a value at the final address (using readPointer for 32/64-bit compatibility)
+    -- 尝试读取最终地址的值（使用readPointer进行32/64位兼容）
     local finalValue = nil
     pcall(function()
         finalValue = readPointer(currentAddr)
@@ -1524,12 +1526,12 @@ local function cmd_read_pointer_chain(params)
     }
 end
 
--- Get RTTI Class Name: Uses C++ RTTI to identify object types
+-- 获取RTTI类名：使用C++ RTTI识别对象类型
 local function cmd_get_rtti_classname(params)
     local address = params.address
     
     if type(address) == "string" then address = getAddressSafe(address) end
-    if not address then return { success = false, error = "Invalid address" } end
+    if not address then return { success = false, error = "无效地址" } end
     
     local className = getRTTIClassName(address)
     
@@ -1546,34 +1548,34 @@ local function cmd_get_rtti_classname(params)
             address = toHex(address),
             class_name = nil,
             found = false,
-            note = "No RTTI information found at this address"
+            note = "在此地址找不到RTTI信息"
         }
     end
 end
 
--- Get Address Info: Converts raw address to symbolic name (module+offset)
+-- 获取地址信息：将原始地址转换为符号名称（模块+偏移）
 local function cmd_get_address_info(params)
     local address = params.address
-    local includeModules = params.include_modules ~= false  -- default true
-    local includeSymbols = params.include_symbols ~= false  -- default true
-    local includeSections = params.include_sections or false  -- default false
+    local includeModules = params.include_modules ~= false  -- 默认true
+    local includeSymbols = params.include_symbols ~= false  -- 默认true
+    local includeSections = params.include_sections or false  -- 默认false
     
     if type(address) == "string" then address = getAddressSafe(address) end
-    if not address then return { success = false, error = "Invalid address" } end
+    if not address then return { success = false, error = "无效地址" } end
     
     local symbolicName = getNameFromAddress(address, includeModules, includeSymbols, includeSections)
     
-    -- inModule() may fail or return nil in anti-cheat environments, so we check symbolicName too
+    -- inModule()可能在反作弊环境中失败或返回nil，所以我们也要检查symbolicName
     local isInModule = false
     local okInMod, inModResult = pcall(inModule, address)
     if okInMod and inModResult then
         isInModule = true
     elseif symbolicName and symbolicName:match("%+") then
-        -- symbolicName contains "+" like "L2.exe+1000" which means it's in a module
+        -- symbolicName包含"+"如"L2.exe+1000"表示它在模块中
         isInModule = true
     end
     
-    -- Ensure symbolic_name has 0x prefix if it's just a hex address
+    -- 确保symbolic_name有0x前缀，如果它只是十六进制地址
     if symbolicName and symbolicName:match("^%x+$") then
         symbolicName = "0x" .. symbolicName
     end
@@ -1591,13 +1593,13 @@ local function cmd_get_address_info(params)
     }
 end
 
--- Checksum Memory: Calculate MD5 hash of a memory region
+-- 校验内存：计算内存区域的MD5哈希
 local function cmd_checksum_memory(params)
     local address = params.address
     local size = params.size or 256
     
     if type(address) == "string" then address = getAddressSafe(address) end
-    if not address then return { success = false, error = "Invalid address" } end
+    if not address then return { success = false, error = "无效地址" } end
     
     local ok, hash = pcall(md5memory, address, size)
     
@@ -1613,26 +1615,26 @@ local function cmd_checksum_memory(params)
             success = false,
             address = toHex(address),
             size = size,
-            error = "Failed to calculate MD5: " .. tostring(hash)
+            error = "计算MD5失败: " .. tostring(hash)
         }
     end
 end
 
--- Generate Signature: Creates a unique AOB pattern for an address (for re-acquisition)
+-- 生成签名：为地址创建唯一的AOB模式（用于重新获取）
 local function cmd_generate_signature(params)
     local addr = params.address
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
-    -- getUniqueAOB(address) returns: AOBString, Offset
-    -- It scans for a unique byte pattern that identifies this location
+    -- getUniqueAOB(address) 返回：AOBString, Offset
+    -- 它扫描用于标识此位置的唯一字节模式
     local ok, signature, offset = pcall(getUniqueAOB, addr)
     
     if not ok then
         return {
             success = false,
             address = toHex(addr),
-            error = "getUniqueAOB failed: " .. tostring(signature)
+            error = "getUniqueAOB失败: " .. tostring(signature)
         }
     end
     
@@ -1640,11 +1642,11 @@ local function cmd_generate_signature(params)
         return {
             success = false,
             address = toHex(addr),
-            error = "Could not generate unique signature - pattern not unique enough"
+            error = "无法生成唯一签名 - 模式不够唯一"
         }
     end
     
-    -- Calculate signature length (count bytes, wildcards count as 1)
+    -- 计算签名长度（计数字节，通配符计为1）
     local byteCount = 0
     for _ in signature:gmatch("%S+") do
         byteCount = byteCount + 1
@@ -1656,33 +1658,33 @@ local function cmd_generate_signature(params)
         signature = signature,
         offset_from_start = offset or 0,
         byte_count = byteCount,
-        usage_hint = string.format("aob_scan('%s') then add offset %d to reach target", signature, offset or 0)
+        usage_hint = string.format("aob_scan('%s')然后添加偏移%d到达目标", signature, offset or 0)
     }
 end
 
 -- ============================================================================
--- DBVM HYPERVISOR TOOLS (Safe Dynamic Tracing - Ring -1)
+-- DBVM虚拟机管理程序工具（安全动态跟踪 - Ring -1）
 -- ============================================================================
--- These tools use DBVM (Debuggable Virtual Machine) for hypervisor-level tracing.
--- They are 100% invisible to anti-cheat: no game memory modification, no debug registers.
--- DBVM works at the hypervisor level, beneath the OS, making it undetectable.
+-- 这些工具使用DBVM（可调试虚拟机）进行虚拟机管理程序级跟踪。
+-- 它们对反作弊完全不可见：无游戏内存修改，无调试寄存器。
+-- DBVM在虚拟机管理程序级别工作，位于OS下方，使其无法被检测到。
 -- ============================================================================
 
--- Get Physical Address: Converts virtual address to physical RAM address
--- Required for DBVM operations which work on physical memory
+-- 获取物理地址：将虚拟地址转换为物理RAM地址
+-- DBVM操作需要
 local function cmd_get_physical_address(params)
     local addr = params.address
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
-    -- Check if DBK (kernel driver) is available
+    -- 检查DBK（内核驱动程序）是否可用
     local ok, phys = pcall(dbk_getPhysicalAddress, addr)
     
     if not ok then
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "DBK driver not loaded. Run dbk_initialize() first or load it via CE settings."
+            error = "DBK驱动程序未加载。首先运行dbk_initialize()或通过CE设置加载。"
         }
     end
     
@@ -1690,7 +1692,7 @@ local function cmd_get_physical_address(params)
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "Could not resolve physical address. Page may not be present in RAM."
+            error = "无法解析物理地址。页面可能不在RAM中。"
         }
     end
     
@@ -1702,74 +1704,72 @@ local function cmd_get_physical_address(params)
     }
 end
 
--- Start DBVM Watch: Hypervisor-level memory access monitoring
--- This is the "Find what writes/reads" equivalent but at Ring -1 (invisible to games)
--- Start DBVM Watch: Hypervisor-level memory access monitoring
--- This is the "Find what writes/reads" equivalent but at Ring -1 (invisible to games)
+-- 开始DBVM监视：虚拟机管理程序级内存访问监视
+-- 这是"查找写入/读取内容"的等效物，但在Ring -1（对游戏不可见）
 local function cmd_start_dbvm_watch(params)
     local addr = params.address
-    local mode = params.mode or "w"  -- "w" = write, "r" = read, "rw" = both, "x" = execute
-    local maxEntries = params.max_entries or 1000  -- Internal buffer size
+    local mode = params.mode or "w"  -- "w" = 写入, "r" = 读取, "rw" = 两者, "x" = 执行
+    local maxEntries = params.max_entries or 1000  -- 内部缓冲区大小
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
-    -- 0. Safety Checks
+    -- 0. 安全检查
     if not dbk_initialized() then
-        return { success = false, error = "DBK driver not loaded. Go to Settings -> Debugger -> Kernelmode" }
+        return { success = false, error = "DBK驱动程序未加载。转到设置->调试器->内核模式" }
     end
     
     if not dbvm_initialized() then
-        -- Try to initialize if possible
+        -- 尝试初始化（如果可能）
         pcall(dbvm_initialize)
         if not dbvm_initialized() then
-            return { success = false, error = "DBVM not running. Go to Settings -> Debugger -> Use DBVM" }
+            return { success = false, error = "DBVM未运行。转到设置->调试器->使用DBVM" }
         end
     end
 
-    -- 1. Get Physical Address (DBVM works on physical RAM)
+    -- 1. 获取物理地址（DBVM在物理RAM上工作）
     local ok, phys = pcall(dbk_getPhysicalAddress, addr)
     if not ok or not phys or phys == 0 then
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "Could not resolve physical address. Page might be paged out or invalid."
+            error = "无法解析物理地址。页面可能已分页或无效。"
         }
     end
     
-    -- 2. Check if already watching this address
+    -- 2. 检查是否已在监视此地址
     local watchKey = toHex(addr)
     if serverState.active_watches[watchKey] then
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "Already watching this address. Call stop_dbvm_watch first."
+            error = "已在监视此地址。首先调用stop_dbvm_watch。"
         }
     end
     
-    -- 3. Configure watch options
-    -- Bit 0: Log multiple times (1 = yes)
-    -- Bit 1: Ignore size / log whole page (2)
-    -- Bit 2: Log FPU registers (4)
-    -- Bit 3: Log Stack (8)
-    local options = 1 + 2 + 8  -- Multiple logging + whole page + stack context
+    -- 3. 配置监视选项
+    -- 位0：多次记录（1 = 是）
+    -- 位1：忽略大小/记录整个页面（2）
+    -- 位2：记录FPU寄存器（4）
+    -- 位3：记录堆栈（8）
+    local options = 1 + 2 + 8  -- 多次记录+整个页面+堆栈上下文
     
-    -- 4. Start the appropriate watch based on mode
+    -- 4. 根据模式开始适当的监视
     local watch_id
     local okWatch, result
     
-    log(string.format("Starting DBVM watch on Phys: 0x%X (Mode: %s)", phys, mode))
+    log(string.format("在物理地址上开始DBVM监视: 0x%X (模式: %s)", phys, mode))
 
     if mode == "x" then
         if not dbvm_watch_executes then
-            return { success = false, error = "dbvm_watch_executes function missing from CE Lua engine" }
+            return { success = false, error = "CE Lua引擎中缺少dbvm_watch_executes函数" }
         end
         okWatch, result = pcall(dbvm_watch_executes, phys, 1, options, maxEntries)
         watch_id = okWatch and result or nil
     elseif mode == "r" or mode == "rw" then
         okWatch, result = pcall(dbvm_watch_reads, phys, 1, options, maxEntries)
         watch_id = okWatch and result or nil
-    else  -- default: write
+    else  -- 默认：写入
         okWatch, result = pcall(dbvm_watch_writes, phys, 1, options, maxEntries)
         watch_id = okWatch and result or nil
     end
@@ -1779,7 +1779,7 @@ local function cmd_start_dbvm_watch(params)
             success = false,
             virtual_address = toHex(addr),
             physical_address = toHex(phys),
-            error = "DBVM watch CRASHED/FAILED: " .. tostring(result)
+            error = "DBVM监视崩溃/失败: " .. tostring(result)
         }
     end
     
@@ -1788,11 +1788,11 @@ local function cmd_start_dbvm_watch(params)
             success = false,
             virtual_address = toHex(addr),
             physical_address = toHex(phys),
-            error = "DBVM watch returned nil (check CE console for details)"
+            error = "DBVM监视返回nil（检查CE控制台详情）"
         }
     end
     
-    -- 5. Store watch for later retrieval
+    -- 5. 存储监视以供稍后检索
     serverState.active_watches[watchKey] = {
         id = watch_id,
         physical = phys,
@@ -1802,24 +1802,24 @@ local function cmd_start_dbvm_watch(params)
     
     return {
         success = true,
-        status = "monitoring",
+        status = "监视中",
         virtual_address = toHex(addr),
         physical_address = toHex(phys),
         watch_id = watch_id,
         mode = mode,
-        note = "Call poll_dbvm_watch to get logs without stopping, or stop_dbvm_watch to end"
+        note = "调用poll_dbvm_watch以获取日志而不停止，或stop_dbvm_watch以结束"
     }
 end
 
--- Poll DBVM Watch: Retrieve logged accesses WITHOUT stopping the watch
--- This is CRITICAL for continuous packet monitoring - logs can be polled repeatedly
+-- 轮询DBVM监视：检索记录的访问而不停止监视
+-- 这对连续数据包监视至关重要 - 日志可以重复轮询
 local function cmd_poll_dbvm_watch(params)
     local addr = params.address
-    local clear = params.clear or true  -- Default to clearing logs after poll
+    local clear = params.clear or true  -- 默认清除日志后轮询
     local max_results = params.max_results or 1000
     
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local watchKey = toHex(addr)
     local watchInfo = serverState.active_watches[watchKey]
@@ -1828,30 +1828,30 @@ local function cmd_poll_dbvm_watch(params)
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "No active watch found for this address. Call start_dbvm_watch first."
+            error = "找不到此地址的活动监视。首先调用start_dbvm_watch。"
         }
     end
     
     local watch_id = watchInfo.id
     local results = {}
     
-    -- Retrieve log entries (DBVM accumulates these automatically)
+    -- 检索日志条目（DBVM自动累积这些）
     local okLog, log = pcall(dbvm_watch_retrievelog, watch_id)
     
     if okLog and log then
         local count = math.min(#log, max_results)
         for i = 1, count do
             local entry = log[i]
-            -- For packet capture, we need the stack pointer to read [ESP+4]
-            -- ESP/RSP contains the stack pointer at time of execution
+            -- 对于数据包捕获，我们需要执行时的堆栈指针来读取[ESP+4]
+            -- ESP/RSP包含执行时的堆栈指针
             local hitData = {
                 hit_number = i,
-                -- 32-bit game uses ESP, 64-bit uses RSP
-                ESP = entry.RSP and (entry.RSP % 0x100000000) or nil,  -- Lower 32 bits for 32-bit game
+                -- 32位游戏使用ESP，64位使用RSP
+                ESP = entry.RSP and (entry.RSP % 0x100000000) or nil,  -- 32位游戏的低32位
                 RSP = entry.RSP and toHex(entry.RSP) or nil,
-                EIP = entry.RIP and (entry.RIP % 0x100000000) or nil,  -- Lower 32 bits
+                EIP = entry.RIP and (entry.RIP % 0x100000000) or nil,  -- 低32位
                 RIP = entry.RIP and toHex(entry.RIP) or nil,
-                -- Include key registers that might hold packet buffer
+                -- 包含可能持有数据包缓冲区的关键寄存器
                 EAX = entry.RAX and (entry.RAX % 0x100000000) or nil,
                 ECX = entry.RCX and (entry.RCX % 0x100000000) or nil,
                 EDX = entry.RDX and (entry.RDX % 0x100000000) or nil,
@@ -1867,23 +1867,23 @@ local function cmd_poll_dbvm_watch(params)
     
     return {
         success = true,
-        status = "active",
+        status = "活动",
         virtual_address = toHex(addr),
         physical_address = toHex(watchInfo.physical),
         mode = watchInfo.mode,
         uptime_seconds = uptime,
         hit_count = #results,
         hits = results,
-        note = "Watch still active. Call again to get more logs, or stop_dbvm_watch to end."
+        note = "监视仍处于活动状态。再次调用以获取更多日志，或stop_dbvm_watch以结束。"
     }
 end
 
--- Stop DBVM Watch: Retrieve logged accesses and disable monitoring
--- Returns all instructions that touched the monitored memory
+-- 停止DBVM监视：检索记录的访问并禁用监视
+-- 返回触摸监视内存的所有指令
 local function cmd_stop_dbvm_watch(params)
     local addr = params.address
     if type(addr) == "string" then addr = getAddressSafe(addr) end
-    if not addr then return { success = false, error = "Invalid address" } end
+    if not addr then return { success = false, error = "无效地址" } end
     
     local watchKey = toHex(addr)
     local watchInfo = serverState.active_watches[watchKey]
@@ -1892,24 +1892,24 @@ local function cmd_stop_dbvm_watch(params)
         return {
             success = false,
             virtual_address = toHex(addr),
-            error = "No active watch found for this address"
+            error = "找不到此地址的活动监视"
         }
     end
     
     local watch_id = watchInfo.id
     local results = {}
     
-    -- 1. Retrieve the log of all memory accesses
+    -- 1. 检索所有内存访问的日志
     local okLog, log = pcall(dbvm_watch_retrievelog, watch_id)
     
     if okLog and log then
-        -- Parse each log entry (contains CPU context at time of access)
+        -- 解析每个日志条目（包含访问时的CPU上下文）
         for i, entry in ipairs(log) do
             local hitData = {
                 hit_number = i,
                 instruction_address = entry.RIP and toHex(entry.RIP) or nil,
                 instruction = entry.RIP and (pcall(disassemble, entry.RIP) and disassemble(entry.RIP) or "???") or "???",
-                -- CPU registers at time of access
+                -- 访问时的CPU寄存器
                 registers = {
                     RAX = entry.RAX and toHex(entry.RAX) or nil,
                     RBX = entry.RBX and toHex(entry.RBX) or nil,
@@ -1926,10 +1926,10 @@ local function cmd_stop_dbvm_watch(params)
         end
     end
     
-    -- 2. Disable the watch
+    -- 2. 禁用监视
     pcall(dbvm_watch_disable, watch_id)
     
-    -- 3. Clean up
+    -- 3. 清理
     serverState.active_watches[watchKey] = nil
     
     local duration = os.time() - (watchInfo.start_time or os.time())
@@ -1942,62 +1942,62 @@ local function cmd_stop_dbvm_watch(params)
         hit_count = #results,
         duration_seconds = duration,
         hits = results,
-        note = #results > 0 and "Found instructions that accessed the memory" or "No accesses detected during monitoring"
+        note = #results > 0 and "找到访问内存的指令" or "监视期间未检测到访问"
     }
 end
 
 -- ============================================================================
--- COMMAND DISPATCHER
+-- 命令调度器
 -- ============================================================================
 
 local commandHandlers = {
-    -- Process & Modules
+    -- 进程和模块
     get_process_info = cmd_get_process_info,
     enum_modules = cmd_enum_modules,
     get_symbol_address = cmd_get_symbol_address,
     
-    -- Memory Read
+    -- 内存读取
     read_memory = cmd_read_memory,
-    read_bytes = cmd_read_memory,  -- Alias
+    read_bytes = cmd_read_memory,  -- 别名
     read_integer = cmd_read_integer,
     read_string = cmd_read_string,
     read_pointer = cmd_read_pointer,
     
-    -- Pattern Scanning
+    -- 模式扫描
     aob_scan = cmd_aob_scan,
-    pattern_scan = cmd_aob_scan,  -- Alias
+    pattern_scan = cmd_aob_scan,  -- 别名
     scan_all = cmd_scan_all,
     get_scan_results = cmd_get_scan_results,
     search_string = cmd_search_string,
     
-    -- Disassembly & Analysis
+    -- 反汇编和分析
     disassemble = cmd_disassemble,
     get_instruction_info = cmd_get_instruction_info,
     find_function_boundaries = cmd_find_function_boundaries,
     analyze_function = cmd_analyze_function,
     
-    -- Reference Finding
+    -- 引用查找
     find_references = cmd_find_references,
     find_call_references = cmd_find_call_references,
     
-    -- Breakpoints
+    -- 断点
     set_breakpoint = cmd_set_breakpoint,
-    set_execution_breakpoint = cmd_set_breakpoint,  -- Alias
+    set_execution_breakpoint = cmd_set_breakpoint,  -- 别名
     set_data_breakpoint = cmd_set_data_breakpoint,
-    set_write_breakpoint = cmd_set_data_breakpoint,  -- Alias
+    set_write_breakpoint = cmd_set_data_breakpoint,  -- 别名
     remove_breakpoint = cmd_remove_breakpoint,
     get_breakpoint_hits = cmd_get_breakpoint_hits,
     list_breakpoints = cmd_list_breakpoints,
     clear_all_breakpoints = cmd_clear_all_breakpoints,
     
-    -- Memory Regions
+    -- 内存区域
     get_memory_regions = cmd_get_memory_regions,
-    enum_memory_regions_full = cmd_enum_memory_regions_full,  -- More accurate, uses native API
+    enum_memory_regions_full = cmd_enum_memory_regions_full,  -- 更准确，使用原生API
     
-    -- Lua Evaluation
+    -- Lua求值
     evaluate_lua = cmd_evaluate_lua,
     
-    -- High-Level Analysis Tools
+    -- 高级分析工具
     dissect_structure = cmd_dissect_structure,
     get_thread_list = cmd_get_thread_list,
     auto_assemble = cmd_auto_assemble,
@@ -2007,28 +2007,28 @@ local commandHandlers = {
     checksum_memory = cmd_checksum_memory,
     generate_signature = cmd_generate_signature,
     
-    -- DBVM Hypervisor Tools (Safe Dynamic Tracing - Ring -1)
+    -- DBVM虚拟机管理程序工具（安全动态跟踪 - Ring -1）
     get_physical_address = cmd_get_physical_address,
     start_dbvm_watch = cmd_start_dbvm_watch,
-    poll_dbvm_watch = cmd_poll_dbvm_watch,  -- Poll logs without stopping watch
+    poll_dbvm_watch = cmd_poll_dbvm_watch,  -- 轮询日志而不停止监视
     stop_dbvm_watch = cmd_stop_dbvm_watch,
-    -- Semantic aliases for ease of use
-    find_what_writes_safe = cmd_start_dbvm_watch,  -- Alias: start watching for writes
-    find_what_accesses_safe = cmd_start_dbvm_watch,  -- Alias: start watching for accesses
-    get_watch_results = cmd_stop_dbvm_watch,  -- Alias: retrieve results and stop
+    -- 语义别名为便于使用
+    find_what_writes_safe = cmd_start_dbvm_watch,  -- 别名：开始监视写入
+    find_what_accesses_safe = cmd_start_dbvm_watch,  -- 别名：开始监视访问
+    get_watch_results = cmd_stop_dbvm_watch,  -- 别名：检索结果并停止
     
-    -- Utility
+    -- 实用工具
     ping = cmd_ping,
 }
 
 -- ============================================================================
--- MAIN COMMAND PROCESSOR
+-- 主命令处理器
 -- ============================================================================
 
 local function executeCommand(jsonRequest)
     local ok, request = pcall(json.decode, jsonRequest)
     if not ok or not request then
-        return json.encode({ jsonrpc = "2.0", error = { code = -32700, message = "Parse error" }, id = nil })
+        return json.encode({ jsonrpc = "2.0", error = { code = -32700, message = "解析错误" }, id = nil })
     end
     
     local method = request.method
@@ -2037,77 +2037,77 @@ local function executeCommand(jsonRequest)
     
     local handler = commandHandlers[method]
     if not handler then
-        return json.encode({ jsonrpc = "2.0", error = { code = -32601, message = "Method not found: " .. tostring(method) }, id = id })
+        return json.encode({ jsonrpc = "2.0", error = { code = -32601, message = "方法未找到: " .. tostring(method) }, id = id })
     end
     
     local ok2, result = pcall(handler, params)
     if not ok2 then
-        return json.encode({ jsonrpc = "2.0", error = { code = -32603, message = "Internal error: " .. tostring(result) }, id = id })
+        return json.encode({ jsonrpc = "2.0", error = { code = -32603, message = "内部错误: " .. tostring(result) }, id = id })
     end
     
     return json.encode({ jsonrpc = "2.0", result = result, id = id })
 end
 
 -- ============================================================================
--- THREAD-BASED PIPE SERVER (NON-BLOCKING GUI)
+-- 线程式管道服务器（非阻塞GUI）
 -- ============================================================================
--- Replaces v10 Timer architecture to prevent GUI Freezes.
--- I/O happens in Worker Thread. Execution happens in Main Thread.
+-- 替换v10定时器架构以防止GUI冻结.
+-- I/O发生在工作线程中。执行发生在主线程中。
 
 local function PipeWorker(thread)
-    log("Worker Thread Started - Waiting for connection...")
+    log("工作线程已启动 - 等待连接...")
     
     while not thread.Terminated do
-        -- Create Pipe Instance per connection attempt
-        -- Increased buffer size to 64KB for better throughput
+        -- 为每个连接尝试创建管道实例
+        -- 增加缓冲区大小到64KB以获得更好的吞吐量
         local pipe = createPipe(PIPE_NAME, 65536, 65536)
         if not pipe then
-            log("Fatal: Failed to create pipe")
+            log("致命错误: 创建管道失败")
             return
         end
         
-        -- Store reference so we can destroy it from main thread (stopServer) to break blocking calls
+        -- 存储引用，以便我们可以从主线程销毁它(stopServer)以打破阻塞调用
         serverState.workerPipe = pipe
         
-        -- timeout for blocking operations (connect/read)
-        -- We DO NOT set pipe.Timeout because it auto-disconnects on timeout.
-        -- We rely on blocking reads and pipe.destroy() from stopServer to break the block.
-        -- pipe.Timeout = 0 (Default, Infinite)
+        -- 设置超时用于阻塞操作（连接/读取）
+        -- 我们不设置pipe.Timeout，因为它会在超时时自动断开连接.
+        -- 我们依赖阻塞读取和stopServer的pipe.destroy()来打破阻塞.
+        -- pipe.Timeout = 0 (默认, 无限)
         
-        -- Wait for client (Blocking, but in thread so GUI is fine)
-        -- LuaPipeServer uses acceptConnection().
-        -- note: acceptConnection might not return a boolean, so we check pipe.Connected afterwards.
+        -- 等待客户端（阻塞，但在线程中，所以GUI正常）
+        -- LuaPipeServer使用acceptConnection().
+        -- 注意: acceptConnection可能不会返回布尔值，所以我们检查pipe.Connected.
         
-        -- log("Thread: Calling acceptConnection()...")
+        -- log("线程: 调用acceptConnection()...")
         pcall(function()
             pipe.acceptConnection()
         end)
         
         if pipe.Connected and not thread.Terminated then
-            log("Client Connected")
+            log("客户端已连接")
             serverState.connected = true
             
             while not thread.Terminated and pipe.Connected do
-                -- Try to read header (4 bytes)
-                -- We use pcall to handle timeouts/errors gracefully
+                -- 尝试读取头（4字节）
+                -- 我们使用pcall优雅地处理超时/错误
                 local ok, lenBytes = pcall(function() return pipe.readBytes(4) end)
                 
                 if ok and lenBytes and #lenBytes == 4 then
                     local len = lenBytes[1] + (lenBytes[2] * 256) + (lenBytes[3] * 65536) + (lenBytes[4] * 16777216)
                     
-                    -- Sanity check length
+                    -- 合理性检查长度
                     if len > 0 and len < 100 * 1024 * 1024 then
                         local payload = pipe.readString(len)
                         
                         if payload then
-                            -- CRITICAL: EXECUTE ON MAIN THREAD
-                            -- We pause the worker and run logic on GUI thread to be safe
+                            -- 关键：在主线程上执行
+                            -- 我们暂停工作线程并在GUI线程上运行逻辑以确保安全
                             local response = nil
                             thread.synchronize(function()
                                 response = executeCommand(payload)
                             end)
                             
-                            -- Write response back (Worker Thread)
+                            -- 写入响应（工作线程）
                             if response then
                                 local rLen = #response
                                 local b1 = rLen % 256
@@ -2119,48 +2119,48 @@ local function PipeWorker(thread)
                                 pipe.writeString(response)
                             end
                         else
-                             -- log("Thread: Read payload failed (nil)")
+                             -- log("线程: 读取payload失败 (nil)")
                         end
                     end
                 else
-                    -- Read failed. If pipe disconnected, the loop will terminate on next check.
+                    -- 读取失败。如果管道断开连接，循环将在下次检查时终止.
                     if not pipe.Connected then
-                        -- Client disconnected gracefully
+                        -- 客户端正常断开连接
                     end
                 end
             end
             
             serverState.connected = false
-            log("Client Disconnected")
+            log("客户端已断开连接")
         else
-            -- Debug: acceptConnection returned but pipe not valid
-            -- This usually happens on termination or weird state
+            -- 调试: acceptConnection返回但管道无效
+            -- 这通常发生在终止或奇怪状态时
             if not thread.Terminated then
-                -- log("Thread: Helper log - connection attempt invalid")
+                -- log("线程: 辅助日志 - 连接尝试无效")
             end
         end
         
-        -- Clean up pipe
+        -- 清理管道
         serverState.workerPipe = nil
         pcall(function() pipe.destroy() end)
         
-        -- Brief sleep before recreating pipe to accept new connection
+        -- 在重新创建管道接受新连接之前短暂休眠
         if not thread.Terminated then sleep(50) end
     end
     
-    log("Worker Thread Terminated")
+    log("工作线程已终止")
 end
 
 -- ============================================================================
--- MAIN CONTROL
+-- 主控制
 -- ============================================================================
 
 function StopMCPBridge()
     if serverState.workerThread then
-        log("Stopping Server (Terminating Thread)...")
+        log("正在停止服务器（终止线程）...")
         serverState.workerThread.terminate()
         
-        -- Force destroy the pipe if it's currently blocking on acceptConnection or read
+        -- 如果当前在acceptConnection或read上阻塞，则强制销毁管道
         if serverState.workerPipe then
             pcall(function() serverState.workerPipe.destroy() end)
             serverState.workerPipe = nil
@@ -2175,30 +2175,30 @@ function StopMCPBridge()
         serverState.timer = nil
     end
     
-    -- CRITICAL: Cleanup all zombie resources (breakpoints, DBVM watches, scans)
+    -- 关键：清理所有僵尸资源（断点、DBVM监视、扫描）
     cleanupZombieState()
     
-    log("Server Stopped")
+    log("服务器已停止")
 end
 
 function StartMCPBridge()
-    StopMCPBridge()  -- This now also calls cleanupZombieState()
+    StopMCPBridge()  -- 这现在还调用cleanupZombieState()
     
-    -- Update Global State
-    log("Starting MCP Bridge v" .. VERSION)
+    -- 更新全局状态
+    log("正在启动MCP桥接 v" .. VERSION)
     
     serverState.running = true
     serverState.connected = false
     
-    -- Create the Worker Thread
+    -- 创建工作线程
     serverState.workerThread = createThread(PipeWorker)
     
     log("===========================================")
-    log("MCP Server Listening on: " .. PIPE_NAME)
-    log("Architecture: Threaded I/O + Synchronized Execution")
-    log("Cleanup: Zombie Prevention Active")
+    log("MCP服务器监听在: " .. PIPE_NAME)
+    log("架构: 线程I/O + 同步执行")
+    log("清理: 僵尸预防激活")
     log("===========================================")
 end
 
--- Auto-start
+-- 自动启动
 StartMCPBridge()

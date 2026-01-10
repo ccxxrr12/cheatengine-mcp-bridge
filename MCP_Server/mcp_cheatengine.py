@@ -2,11 +2,11 @@ import sys
 import os
 
 # ============================================================================
-# CRITICAL: WINDOWS LINE ENDING FIX FOR MCP (MONKEY-PATCH)
-# The MCP SDK's stdio_server uses TextIOWrapper without newline='\n', causing
-# Windows to output CRLF (\r\n) instead of LF (\n). This causes the error:
+# 关键：为MCP修复Windows换行符（猴子补丁）
+# MCP SDK的stdio_server在没有newline='\n'的情况下使用TextIOWrapper，
+# 导致Windows输出CRLF（\r\n）而不是LF（\n）。这会导致错误：
 # "invalid trailing data at the end of stream"
-# We MUST patch the MCP SDK BEFORE importing FastMCP.
+# 我们必须在导入FastMCP之前修补MCP SDK。
 # ============================================================================
 
 if sys.platform == "win32":
@@ -14,11 +14,11 @@ if sys.platform == "win32":
     from io import TextIOWrapper
     from contextlib import asynccontextmanager
     
-    # Set binary mode on underlying file handles
+    # 设置底层文件句柄的二进制模式
     msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
     msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
     
-    # Monkey-patch the MCP SDK's stdio_server to use newline='\n'
+    # 修补MCP SDK的stdio_server以使用newline='\n'
     import mcp.server.stdio as mcp_stdio
     import anyio
     import anyio.lowlevel
@@ -31,12 +31,12 @@ if sys.platform == "win32":
         stdin: "anyio.AsyncFile[str] | None" = None,
         stdout: "anyio.AsyncFile[str] | None" = None,
     ):
-        """Patched stdio_server with proper Windows newline handling."""
+        """修补的stdio_server，具有正确的Windows换行符处理。"""
         if not stdin:
-            # Use newline='\n' to prevent CRLF translation on Windows
+            # 使用newline='\n'以防止Windows上的CRLF转换
             stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8", newline='\n'))
         if not stdout:
-            # Use newline='\n' to prevent CRLF translation on Windows
+            # 使用newline='\n'以防止Windows上的CRLF转换
             stdout = anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", newline='\n'))
 
         read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
@@ -71,21 +71,21 @@ if sys.platform == "win32":
             tg.start_soon(stdout_writer)
             yield read_stream, write_stream
     
-    # Apply the monkey-patch
+    # 应用猴子补丁
     mcp_stdio.stdio_server = _patched_stdio_server
 
 # ============================================================================
-# STDOUT PROTECTION FOR MCP
-# MCP uses stdout for JSON-RPC. ANY stray output corrupts it.
+# MCP输出流保护
+# MCP使用stdout进行JSON-RPC。任何杂散输出都会破坏它。
 # ============================================================================
 
-# Save original stdout for MCP to use
+# 保存原始stdout供MCP使用
 _mcp_stdout = sys.stdout
 
-# Redirect stdout to stderr so any accidental prints go to logs, not MCP stream
+# 重定向stdout到stderr，以便任何意外打印都会转到日志，而不是MCP流
 sys.stdout = sys.stderr
 
-# Now safe to import libraries that might print during import
+# 现在可以安全地导入可能在导入期间打印的库
 import json
 import struct
 import time
@@ -98,52 +98,54 @@ try:
     import pywintypes
     from mcp.server.fastmcp import FastMCP
     
-    # CRITICAL: Also patch the reference inside the fastmcp module
-    # FastMCP already imported stdio_server before our patch, so we need to update its reference too
+    # 关键：还要修补fastmcp模块内的引用
+    # FastMCP已经在我们的补丁之前导入了stdio_server，所以我们也需要更新它的引用
     if sys.platform == "win32":
         import mcp.server.fastmcp.server as fastmcp_server
         fastmcp_server.stdio_server = _patched_stdio_server
         
 except ImportError as e:
-    print(f"[MCP CE] Import Error: {e}", file=sys.stderr, flush=True)
+    print(f"[MCP CE] 导入错误: {e}", file=sys.stderr, flush=True)
     sys.exit(1)
 
-# Restore stdout for MCP usage after imports are complete
+# 导入完成后恢复stdout供MCP使用
 sys.stdout = _mcp_stdout
 
-# Debug helper - always goes to stderr, never corrupts MCP
+# 调试助手 - 总是转到stderr，永远不会破坏MCP
 def debug_log(msg):
     print(f"[MCP CE] {msg}", file=sys.stderr, flush=True)
 
-# Helper to format results as proper JSON strings for MCP tools
+# 辅助函数，将结果格式化为适当的JSON字符串供MCP工具使用
 def format_result(result):
-    """Format CE Bridge result as a proper JSON string for AI consumption."""
+    """将CE桥接结果格式化为适当的JSON字符串供AI消费。"""
     if isinstance(result, dict):
         return json.dumps(result, indent=None, ensure_ascii=False)
     elif isinstance(result, str):
-        return result  # Already a string
+        return result  # 已经是字符串
     else:
         return json.dumps(result)
 
 # ============================================================================
-# CONFIGURATION
+# 配置
 # ============================================================================
 
-# V11 Bridge uses 'CE_MCP_Bridge_v99'
+# V11桥接使用'CE_MCP_Bridge_v99'
 PIPE_NAME = r"\\.\pipe\CE_MCP_Bridge_v99"
 MCP_SERVER_NAME = "cheatengine"
 
 # ============================================================================
-# PIPE CLIENT
+# 管道客户端
 # ============================================================================
 
 class CEBridgeClient:
     def __init__(self):
+        # 初始化管道句柄
         self.handle = None
 
     def connect(self):
-        """Attempts to connect to the CE Named Pipe."""
+        """尝试连接到CE命名管道。"""
         try:
+            # 创建与Cheat Engine Lua脚本的命名管道连接
             self.handle = win32file.CreateFile(
                 PIPE_NAME,
                 win32file.GENERIC_READ | win32file.GENERIC_WRITE,
@@ -155,54 +157,64 @@ class CEBridgeClient:
             )
             return True
         except pywintypes.error as e:
-            # sys.stderr.write(f"[CEBridge] Connect Error: {e}\n")
+            # sys.stderr.write(f"[CEBridge] 连接错误: {e}\n")
             return False
 
     def send_command(self, method, params=None):
-        """Send command to CE Bridge with auto-reconnection on failure."""
+        """发送命令到CE桥接，失败时自动重连。"""
         max_retries = 2
         last_error = None
         
         for attempt in range(max_retries):
             if not self.handle:
                 if not self.connect():
-                    raise ConnectionError("Cheat Engine Bridge (v11/v99) is not running (Pipe not found).")
+                    raise ConnectionError("Cheat Engine桥接 (v11/v99) 未运行（找不到管道）。")
 
+            # 构造JSON-RPC请求
             request = {
                 "jsonrpc": "2.0",
                 "method": method,
                 "params": params or {},
-                "id": int(time.time() * 1000)
+                "id": int(time.time() * 1000)  # 使用时间戳作为唯一ID
             }
             
             try:
+                # 将请求序列化为JSON并编码为字节
                 req_json = json.dumps(request).encode('utf-8')
+                # 创建长度头（小端序）
                 header = struct.pack('<I', len(req_json))
                 
+                # 发送长度头和JSON请求
                 win32file.WriteFile(self.handle, header)
                 win32file.WriteFile(self.handle, req_json)
                 
+                # 读取响应头（4字节长度）
                 resp_header_buffer = win32file.ReadFile(self.handle, 4)[1]
                 if len(resp_header_buffer) < 4:
                     self.close()
-                    last_error = ConnectionError("Incomplete response header from CE.")
-                    continue  # Retry
-                    
+                    last_error = ConnectionError("来自CE的响应头不完整。")
+                    continue  # 重试
+                
+                # 解析响应长度
                 resp_len = struct.unpack('<I', resp_header_buffer)[0]
                 
+                # 检查响应大小是否过大
                 if resp_len > 16 * 1024 * 1024: 
                     self.close()
-                    raise ConnectionError(f"Response too large: {resp_len} bytes")
+                    raise ConnectionError(f"响应过大: {resp_len} 字节")
 
+                # 读取响应体
                 resp_body_buffer = win32file.ReadFile(self.handle, resp_len)[1]
                 
                 try:
+                    # 解析JSON响应
                     response = json.loads(resp_body_buffer.decode('utf-8'))
                 except json.JSONDecodeError:
                     self.close()
-                    last_error = ConnectionError("Invalid JSON received from CE")
-                    continue  # Retry
+                    last_error = ConnectionError("从CE接收到无效JSON")
+                    continue  # 重试
                 
+                # 检查是否有错误返回
                 if 'error' in response:
                     return {"success": False, "error": str(response['error'])}
                 if 'result' in response:
@@ -211,17 +223,19 @@ class CEBridgeClient:
                 return response
 
             except pywintypes.error as e:
+                # 发生通信错误，关闭连接
                 self.close()
-                last_error = ConnectionError(f"Pipe Communication failed: {e}")
+                last_error = ConnectionError(f"管道通信失败: {e}")
                 if attempt < max_retries - 1:
-                    continue  # Retry
+                    continue  # 重试
         
-        # All retries failed
+        # 所有重试都失败
         if last_error:
             raise last_error
-        raise ConnectionError("Unknown communication error")
+        raise ConnectionError("未知通信错误")
 
     def close(self):
+        """关闭管道连接。"""
         if self.handle:
             try:
                 win32file.CloseHandle(self.handle)
@@ -229,39 +243,40 @@ class CEBridgeClient:
                 pass
             self.handle = None
 
+# 创建全局客户端实例
 ce_client = CEBridgeClient()
 
 # ============================================================================
-# MCP SERVER - v11 IMPLEMENTATION
+# MCP服务器 - v11实现
 # ============================================================================
 
 mcp = FastMCP(MCP_SERVER_NAME)
 
-# --- PROCESS & MODULES ---
+# --- 进程和模块相关工具 ---
 
 @mcp.tool()
 def get_process_info() -> str:
-    """Get current process ID, name, modules count and architecture."""
+    """获取当前进程ID、名称、模块计数和架构。"""
     return format_result(ce_client.send_command("get_process_info"))
 
 @mcp.tool()
 def enum_modules() -> str:
-    """List all loaded modules (DLLs) with their base addresses and sizes."""
+    """列出所有加载的模块(DLL)及其基地址和大小。"""
     return format_result(ce_client.send_command("enum_modules"))
 
 @mcp.tool()
 def get_thread_list() -> str:
-    """Get list of threads in the attached process."""
+    """获取附加进程中的线程列表。"""
     return format_result(ce_client.send_command("get_thread_list"))
 
 @mcp.tool()
 def get_symbol_address(symbol: str) -> str:
-    """Resolve a symbol name (e.g., 'Engine.GameEngine') to an address."""
+    """将符号名(例如'Engine.GameEngine')解析为地址。"""
     return format_result(ce_client.send_command("get_symbol_address", {"symbol": symbol}))
 
 @mcp.tool()
 def get_address_info(address: str, include_modules: bool = True, include_symbols: bool = True, include_sections: bool = False) -> str:
-    """Get symbolic name and module info for an address (Reverse of get_symbol_address)."""
+    """获取地址的符号名和模块信息(get_symbol_address的逆向操作)。"""
     return format_result(ce_client.send_command("get_address_info", {
         "address": address, 
         "include_modules": include_modules, 
@@ -271,30 +286,30 @@ def get_address_info(address: str, include_modules: bool = True, include_symbols
 
 @mcp.tool()
 def get_rtti_classname(address: str) -> str:
-    """Try to identify the class name of an object at address using Run-Time Type Information."""
+    """尝试使用运行时类型信息识别地址处对象的类名。"""
     return format_result(ce_client.send_command("get_rtti_classname", {"address": address}))
 
-# --- MEMORY READING ---
+# --- 内存读取工具 ---
 
 @mcp.tool()
 def read_memory(address: str, size: int = 256) -> str:
-    """Read raw bytes from memory."""
+    """从内存读取原始字节。"""
     return format_result(ce_client.send_command("read_memory", {"address": address, "size": size}))
 
 @mcp.tool()
 def read_integer(address: str, type: str = "dword") -> str:
-    """Read a number from memory. Types: byte, word, dword, qword, float, double."""
+    """从内存读取数字。类型: byte, word, dword, qword, float, double。"""
     return format_result(ce_client.send_command("read_integer", {"address": address, "type": type}))
 
 @mcp.tool()
 def read_string(address: str, max_length: int = 256, wide: bool = False) -> str:
-    """Read a string from memory (ASCII or Wide/UTF-16)."""
+    """从内存读取字符串(ASCII或宽/UTF-16)。"""
     return format_result(ce_client.send_command("read_string", {"address": address, "max_length": max_length, "wide": wide}))
 
 @mcp.tool()
 def read_pointer(address: str, offsets: list[int] = None) -> str:
-    """Read a pointer chain. Returns the final address and value."""
-    # V11 supports 'read_pointer' command for simple dereference or 'read_pointer_chain' for multiple
+    """读取指针链。返回最终地址和值。"""
+    # V11支持简单的反引用'read_pointer'命令或用于多个偏移的'read_pointer_chain'
     if offsets:
         return format_result(ce_client.send_command("read_pointer_chain", {"base": address, "offsets": offsets}))
     else:
@@ -302,93 +317,93 @@ def read_pointer(address: str, offsets: list[int] = None) -> str:
 
 @mcp.tool()
 def read_pointer_chain(base: str, offsets: list[int]) -> str:
-    """Follow a multi-level pointer chain and return analysis of every step."""
+    """跟随多级指针链并返回每一步的分析。"""
     return format_result(ce_client.send_command("read_pointer_chain", {"base": base, "offsets": offsets}))
 
 @mcp.tool()
 def checksum_memory(address: str, size: int) -> str:
-    """Calculate MD5 checksum of a memory region to detect changes."""
+    """计算内存区域的MD5校验和以检测更改。"""
     return format_result(ce_client.send_command("checksum_memory", {"address": address, "size": size}))
 
-# --- SCANNING ---
+# --- 扫描工具 ---
 
 @mcp.tool()
 def scan_all(value: str, type: str = "exact", protection: str = "+W-C") -> str:
-    """Unified Memory Scanner. Types: exact, string, array. Protection: +W-C (Writable, Not Copy-on-Write)."""
+    """统一内存扫描器。类型: exact, string, array。保护: +W-C (可写, 非写时复制)。"""
     return format_result(ce_client.send_command("scan_all", {"value": value, "type": type, "protection": protection}))
 
 @mcp.tool()
 def get_scan_results(max: int = 100) -> str:
-    """Get results from the last 'scan_all' operation. Use 'max' to limit output."""
+    """获取上次'scan_all'操作的结果。使用'max'限制输出。"""
     return format_result(ce_client.send_command("get_scan_results", {"max": max}))
 
 @mcp.tool()
 def aob_scan(pattern: str, protection: str = "+X", limit: int = 100) -> str:
-    """Scan for an Array of Bytes (AOB) pattern. Example: '48 89 5C 24'."""
+    """扫描字节数组(AOB)模式。示例: '48 89 5C 24'。"""
     return format_result(ce_client.send_command("aob_scan", {"pattern": pattern, "protection": protection, "limit": limit}))
 
 @mcp.tool()
 def search_string(string: str, wide: bool = False, limit: int = 100) -> str:
-    """Quickly search for a text string in memory."""
+    """快速在内存中搜索文本字符串。"""
     return format_result(ce_client.send_command("search_string", {"string": string, "wide": wide, "limit": limit}))
 
 @mcp.tool()
 def generate_signature(address: str) -> str:
-    """Generate a unique AOB signature that can find this specific address again."""
+    """生成唯一AOB签名，可用于再次找到此特定地址。"""
     return format_result(ce_client.send_command("generate_signature", {"address": address}))
 
 @mcp.tool()
 def get_memory_regions(max: int = 100) -> str:
-    """Get list of valid memory regions nearby common bases."""
+    """获取常见基址附近的有效内存区域列表。"""
     return format_result(ce_client.send_command("get_memory_regions", {"max": max}))
 
 @mcp.tool()
 def enum_memory_regions_full(max: int = 500) -> str:
-    """Enumerate ALL memory regions in the process (Native EnumMemoryRegions)."""
+    """枚举进程中的所有内存区域(原生EnumMemoryRegions)。"""
     return format_result(ce_client.send_command("enum_memory_regions_full", {"max": max}))
 
-# --- ANALYSIS & DISASSEMBLY ---
+# --- 分析和反汇编工具 ---
 
 @mcp.tool()
 def disassemble(address: str, count: int = 20) -> str:
-    """Disassemble instructions starting at an address."""
+    """从地址开始反汇编指令。"""
     return format_result(ce_client.send_command("disassemble", {"address": address, "count": count}))
 
 @mcp.tool()
 def get_instruction_info(address: str) -> str:
-    """Get detailed info about a single instruction (size, bytes, opcode)."""
+    """获取单条指令的详细信息(大小、字节、操作码)。"""
     return format_result(ce_client.send_command("get_instruction_info", {"address": address}))
 
 @mcp.tool()
 def find_function_boundaries(address: str, max_search: int = 4096) -> str:
-    """Attempt to find the start and end of a function containing the address."""
+    """尝试找到包含地址的函数的开始和结束。"""
     return format_result(ce_client.send_command("find_function_boundaries", {"address": address, "max_search": max_search}))
 
 @mcp.tool()
 def analyze_function(address: str) -> str:
-    """Analyze a function to find all CALL instructions output (calls made by this function)."""
+    """分析函数以找出所有CALL指令输出(此函数所做的调用)。"""
     return format_result(ce_client.send_command("analyze_function", {"address": address}))
 
 @mcp.tool()
 def find_references(address: str, limit: int = 50) -> str:
-    """Find instructions that access (reference) this address."""
+    """查找访问(引用)此地址的指令。"""
     return format_result(ce_client.send_command("find_references", {"address": address, "limit": limit}))
 
 @mcp.tool()
 def find_call_references(function_address: str, limit: int = 100) -> str:
-    """Find all locations that CALL this function."""
+    """查找调用此函数的所有位置。"""
     return format_result(ce_client.send_command("find_call_references", {"address": function_address, "limit": limit}))
 
 @mcp.tool()
 def dissect_structure(address: str, size: int = 256) -> str:
-    """Use CE's auto-guess feature to interpret memory at address as a structure."""
+    """使用CE的自动猜测功能将地址处的内存解释为结构。"""
     return format_result(ce_client.send_command("dissect_structure", {"address": address, "size": size}))
 
-# --- DEBUGGING & BREAKPOINTS ---
+# --- 调试和断点工具 ---
 
 @mcp.tool()
 def set_breakpoint(address: str, id: str = None, capture_registers: bool = True, capture_stack: bool = False, stack_depth: int = 16) -> str:
-    """Set a hardware execution breakpoint. Non-breaking/Logging only."""
+    """设置硬件执行断点。仅非中断/日志记录。"""
     return format_result(ce_client.send_command("set_breakpoint", {
         "address": address, 
         "id": id,
@@ -399,7 +414,7 @@ def set_breakpoint(address: str, id: str = None, capture_registers: bool = True,
 
 @mcp.tool()
 def set_data_breakpoint(address: str, id: str = None, access_type: str = "w", size: int = 4) -> str:
-    """Set a hardware data breakpoint (watchpoint). Types: 'r' (read), 'w' (write), 'rw' (access)."""
+    """设置硬件数据断点(监视点)。类型: 'r'(读取), 'w'(写入), 'rw'(访问)。"""
     return format_result(ce_client.send_command("set_data_breakpoint", {
         "address": address, 
         "id": id,
@@ -409,70 +424,70 @@ def set_data_breakpoint(address: str, id: str = None, access_type: str = "w", si
 
 @mcp.tool()
 def remove_breakpoint(id: str) -> str:
-    """Remove a breakpoint by its ID."""
+    """按ID移除断点。"""
     return format_result(ce_client.send_command("remove_breakpoint", {"id": id}))
 
 @mcp.tool()
 def list_breakpoints() -> str:
-    """List all active breakpoints."""
+    """列出所有活动断点。"""
     return format_result(ce_client.send_command("list_breakpoints"))
 
 @mcp.tool()
 def clear_all_breakpoints() -> str:
-    """Remove ALL breakpoints."""
+    """移除所有断点。"""
     return format_result(ce_client.send_command("clear_all_breakpoints"))
 
 @mcp.tool()
 def get_breakpoint_hits(id: str = None, clear: bool = False) -> str:
-    """Get hits for a specific breakpoint ID (or all if None). Set clear=True to flush buffer."""
+    """获取特定断点ID的命中次数(如果没有ID则获取全部)。设置clear=True刷新缓冲区。"""
     return format_result(ce_client.send_command("get_breakpoint_hits", {"id": id, "clear": clear}))
 
-# --- DBVM / HYPERVISOR TOOLS (Ring -1) ---
+# --- DBVM / 虚拟机管理程序工具 (Ring -1) ---
 
 @mcp.tool()
 def get_physical_address(address: str) -> str:
-    """Translate Virtual Address to Physical Address (requires DBVM)."""
+    """将虚拟地址转换为物理地址(需要DBVM)。"""
     return format_result(ce_client.send_command("get_physical_address", {"address": address}))
 
 @mcp.tool()
 def start_dbvm_watch(address: str, mode: str = "w", max_entries: int = 1000) -> str:
-    """Start invisible DBVM hypervisor watch. Modes: 'w' (writes), 'r' (reads), 'x' (execute)."""
+    """启动隐形DBVM虚拟机管理程序监视。模式: 'w'(写入), 'r'(读取), 'x'(执行)。"""
     return format_result(ce_client.send_command("start_dbvm_watch", {"address": address, "mode": mode, "max_entries": max_entries}))
 
 @mcp.tool()
 def stop_dbvm_watch(address: str) -> str:
-    """Stop DBVM watch and return results."""
+    """停止DBVM监视并返回结果。"""
     return format_result(ce_client.send_command("stop_dbvm_watch", {"address": address}))
 
 @mcp.tool()
 def poll_dbvm_watch(address: str, max_results: int = 1000) -> str:
-    """Poll DBVM watch logs WITHOUT stopping. Returns register state at each execution hit."""
+    """轮询DBVM监视日志而不停止。返回每次执行命中的寄存器状态。"""
     return format_result(ce_client.send_command("poll_dbvm_watch", {
         "address": address, 
         "max_results": max_results
     }))
 
-# --- SCRIPTING & CONTROL ---
+# --- 脚本和控制工具 ---
 
 @mcp.tool()
 def evaluate_lua(code: str) -> str:
-    """Execute arbitrary Lua code in Cheat Engine."""
+    """在Cheat Engine中执行任意Lua代码。"""
     return format_result(ce_client.send_command("evaluate_lua", {"code": code}))
 
 @mcp.tool()
 def auto_assemble(script: str) -> str:
-    """Run an AutoAssembler script (injection, code caves, etc)."""
+    """运行AutoAssembler脚本(注入、代码洞等)。"""
     return format_result(ce_client.send_command("auto_assemble", {"script": script}))
 
 @mcp.tool()
 def ping() -> str:
-    """Check connectivity and get version info."""
+    """检查连接性和获取版本信息。"""
     return format_result(ce_client.send_command("ping"))
 
 if __name__ == "__main__":
     try:
-        debug_log("Starting FastMCP server (v11/v99 compatible)...")
+        debug_log("正在启动FastMCP服务器(v11/v99兼容)...")
         mcp.run()
     except Exception as e:
-        debug_log(f"Fatal Crash: {e}")
+        debug_log(f"致命错误: {e}")
         traceback.print_exc(file=sys.stderr)
