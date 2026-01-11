@@ -2,108 +2,107 @@
 
 # Cheat Engine MCP Bridge
 
-**Let multibillion $ AI datacenters analyze the program memory for you.**
+**让数十亿美金的AI数据中心为你分析程序内存。**
 
-Connect Cursor, Copilot, Antigravity or your favorite local AI agent via RooCode/Cline directly to Cheat Engine to create mods, trainers, security audits or do anything else with any program/game in a fraction of a time.
+通过RooCode/Cline将Cursor、Copilot、Antigravity或你喜爱的本地AI代理直接连接到Cheat Engine，以创建修改、训练器、安全审计或在极短时间内对任何程序/游戏执行任何操作。
 
 [![Version](https://img.shields.io/badge/version-11.4.0-blue.svg)](#) [![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
 
-> [!NOTE]
-> Thanks everyone for the stars, much appreciated! <3
+
 
 ---
 
-## The Problem
+## 问题
 
-You're staring at gigabytes of memory. Millions of addresses. Thousands of functions. Finding *that one pointer*, *that one structure* takes **days or weeks** of manual work.
+你正盯着数十亿字节的内存。数百万个地址。数千个函数。找到*那个指针*、*那个结构*需要**数天或数周**的手动工作。
 
-**What if you could just ask?**
+**如果你可以直接询问呢？**
 
-> *"Find the packet decryptor hook."*  
-> *"Find the OPcode of character coordinates."*  
-> *"Find the OPcode of health values."*  
-> *"Find the unique AOB pattern to make my trainer reliable after game updates."*
+> *"找到数据包解密器钩子。"*
+> *"找到角色坐标的操作码。"*
+> *"找到生命值的操作码。"*
+> *"找到唯一的AOB模式，使我的训练器在游戏更新后仍然可靠。"*
 
-**That's exactly what this does.**
+**这正是此工具的作用。**
 
-_- Stop clicking through hex dumps and start having conversations with the memory._
-
----
-
-## What You Get:
-
-| Before (Manual) | After (AI Agent + MCP) |
-|-----------------|---------------------|
-| Day 1: Find packet address | Minute 1: "Find RX packet decryption hook" |
-| Day 2: Trace what writes to it | Minute 3: "Generate unique AOB signature to make it update persistent" |
-| Day 3: Find RX hook | Minute 6: "Find movement OPcodes" |
-| Day 4: Document structure | Minute 10: "Create python interpreter of hex to plain text" |
-| Day 5: Game updates, start over | **Done.** |
-
-**Your AI can now:**
-- Read any memory instantly (integers, floats, strings, pointers)
-- Follow pointer chains: `[[base+0x10]+0x20]+0x8` → resolved in ms
-- Auto-analyze structures with field types and values
-- Identify C++ objects via RTTI: *"This is a CPlayer object"*
-- Disassemble and analyze functions
-- Debug invisibly with hardware breakpoints + Ring -1 hypervisor
-- And much more!
+_- 停止在十六进制转储中点击，开始与内存对话。_
 
 ---
 
-## How It Works
+## 你将获得：
+
+| 之前（手动） | 之后（AI代理 + MCP） |
+|-------------|---------------------|
+| 第1天：找到数据包地址 | 第1分钟："找到RX数据包解密钩子" |
+| 第2天：追踪什么写入它 | 第3分钟："生成唯一的AOB签名，使其在更新后仍然有效" |
+| 第3天：找到RX钩子 | 第6分钟："找到移动操作码" |
+| 第4天：记录结构 | 第10分钟："创建十六进制到明文的Python解释器" |
+| 第5天：游戏更新，重新开始 | **完成。** |
+
+**你的AI现在可以：**
+- 即时读取任何内存（整数、浮点数、字符串、指针）
+- 跟踪指针链：`[[base+0x10]+0x20]+0x8` → 毫秒内解析
+- 自动分析带有字段类型和值的结构
+- 通过RTTI识别C++对象：*"这是一个CPlayer对象"*
+- 反汇编和分析函数
+- 使用硬件断点 + Ring -1 虚拟机管理程序进行隐形调试
+- 还有更多！
+
+---
+
+## 工作原理
 ```mermaid
 flowchart TD
-    AI[AI Agent: Claude/Cursor/Copilot]
+    AI[AI代理：Claude/Cursor/Copilot]
     
-    AI -->|MCP Protocol - JSON-RPC over stdio| MCP
+    AI -->|MCP协议 - JSON-RPC over stdio| MCP
     
-    MCP[mcp_cheatengine.py - Python MCP Server]
+    MCP[mcp_cheatengine.py - Python MCP服务器]
     
-    MCP <-->|Named Pipe - Async| PIPE
+    MCP <-->|命名管道 - 异步| PIPE
     
     PIPE["\\.\\pipe\\CE_MCP_Bridge_v99"]
     
     PIPE <--> CE
     
-    subgraph CE[Cheat Engine - DBVM Mode]
+    subgraph CE[Cheat Engine - DBVM模式]
         subgraph LUA[ce_mcp_bridge.lua]
-            WORKER[Worker Thread - Blocking I/O]
-            MAIN[Main Thread - GUI + CE API]
-            WORKER <-->|Sync| MAIN
+            WORKER[工作线程 - 阻塞I/O]
+            MAIN[主线程 - GUI + CE API]
+            WORKER <-->|同步| MAIN
         end
     end
     
-    MAIN -->|Memory Access| TARGET[Target .exe]
+    MAIN -->|内存访问| TARGET[目标 .exe]
 ```
 ---
 
-## Installation
+## 安装
 
 ```bash
 pip install -r MCP_Server/requirements.txt
 ```
-Or manually:
+或手动安装：
 ```bash
 pip install mcp pywin32
 ```
 
 > [!NOTE]
-> **Windows only** - Uses Named Pipes (`pywin32`)
+> **仅支持Windows** - 使用命名管道 (`pywin32`)
 
 ---
 
-## Quick Start
+## 快速开始
 
-### 1. Load Bridge in Cheat Engine
+### 1. 在Cheat Engine中加载桥接
 ```
-1. Enable DBVM in CheatEngine.
-2. File → Execute Script → Open ce_mcp_bridge.lua → Execute
+1. 在CheatEngine中启用DBVM。
+2. 文件 → 执行脚本 → 打开ce_mcp_bridge.lua → 执行
 ```
-Look for: `[MCP v11.4.0] Server started on \\.\pipe\CE_MCP_Bridge_v99`
+查找：`[MCP v11.4.0] Server started on \\.\pipe\CE_MCP_Bridge_v99`
 
-### 2. Configure MCP Client
-Add to your MCP configuration (e.g., `mcp_config.json`):
+### 2. 配置MCP客户端
+添加到你的MCP配置文件（例如，`mcp_config.json`）：
 ```json
 {
   "servers": {
@@ -114,121 +113,444 @@ Add to your MCP configuration (e.g., `mcp_config.json`):
   }
 }
 ```
-Restart the IDE to load the MCP server config.
+重启IDE以加载MCP服务器配置。
 
-### 3. Verify Connection
-Use the `ping` tool to verify connectivity:
+### 3. 验证连接
+使用`ping`工具验证连接：
 ```json
 {"success": true, "version": "11.4.0", "message": "CE MCP Bridge Active"}
 ```
 
-### 4. Start Asking Questions
+### 4. 开始提问
 ```
-"What process is attached?"
-"Read 16 bytes at the base address"
-"Disassemble the entry point"
+"附加的是什么进程？"
+"读取基地址处的16字节"
+"反汇编入口点"
 ```
 
 ---
 
-## 39 MCP Tools Available
+## 可用的40个MCP工具
 
-### Memory
-| Tool | Description |
+### 内存操作
+| 工具 | 描述 |
 |------|-------------|
-| `read_memory`, `read_integer`, `read_string` | Read any data type |
-| `read_pointer_chain` | Follow `[[base+0x10]+0x20]` paths |
-| `scan_all`, `aob_scan` | Find values and byte patterns |
+| `read_memory` | 从内存读取原始字节 |
+| `read_integer` | 读取数字（byte, word, dword, qword, float, double） |
+| `read_string` | 读取ASCII或UTF-16字符串 |
+| `read_pointer` | 读取单个指针 |
+| `read_pointer_chain` | 跟踪`[[base+0x10]+0x20]`路径并提供完整分析 |
+| `checksum_memory` | 计算内存区域的MD5校验和 |
 
-### Analysis
-| Tool | Description |
+### 扫描与搜索
+| 工具 | 描述 |
 |------|-------------|
-| `disassemble`, `analyze_function` | Code analysis |
-| `dissect_structure` | Auto-detect fields and types |
-| `get_rtti_classname` | Identify C++ object types |
-| `find_references`, `find_call_references` | Cross-references |
+| `scan_all` | 用于值的统一内存扫描器 |
+| `get_scan_results` | 检索扫描结果 |
+| `aob_scan` | 搜索字节模式（字节数组） |
+| `search_string` | 在内存中搜索文本字符串 |
+| `generate_signature` | 为地址创建唯一的AOB签名 |
+| `get_memory_regions` | 列出常见基址附近的有效内存区域 |
+| `enum_memory_regions_full` | 枚举所有内存区域（原生API） |
 
-### Debugging
-| Tool | Description |
+### 分析与反汇编
+| 工具 | 描述 |
 |------|-------------|
-| `set_breakpoint`, `set_data_breakpoint` | Hardware breakpoints |
-| `start_dbvm_watch` | Ring -1 invisible tracing |
+| `disassemble` | 从地址反汇编指令 |
+| `get_instruction_info` | 获取单条指令的详细信息 |
+| `find_function_boundaries` | 检测函数开始/结束 |
+| `analyze_function` | 分析函数调用图 |
+| `find_references` | 查找访问地址的指令 |
+| `find_call_references` | 查找所有对函数的调用 |
+| `dissect_structure` | 自动检测内存中的字段和类型 |
+| `get_rtti_classname` | 通过RTTI识别C++对象 |
 
-And many more at `AI_Context/MCP_Bridge_Command_Reference.md`
+### 调试与断点
+| 工具 | 描述 |
+|------|-------------|
+| `set_breakpoint` | 设置硬件执行断点 |
+| `set_data_breakpoint` | 设置硬件数据断点（读/写） |
+| `remove_breakpoint` | 通过ID移除断点 |
+| `list_breakpoints` | 列出所有活动断点 |
+| `clear_all_breakpoints` | 移除所有断点 |
+| `get_breakpoint_hits` | 获取断点命中信息 |
+
+### DBVM (Ring -1) 工具
+| 工具 | 描述 |
+|------|-------------|
+| `get_physical_address` | 将虚拟地址转换为物理地址 |
+| `start_dbvm_watch` | 启动隐形虚拟机管理程序监视 |
+| `stop_dbvm_watch` | 停止DBVM监视并获取结果 |
+| `poll_dbvm_watch` | 轮询DBVM监视日志而不停止 |
+
+### 进程与模块
+| 工具 | 描述 |
+|------|-------------|
+| `get_process_info` | 获取当前进程ID、名称、模块计数 |
+| `enum_modules` | 列出所有加载的模块（DLL） |
+| `get_thread_list` | 获取附加进程中的线程列表 |
+| `get_symbol_address` | 将符号名称解析为地址 |
+| `get_address_info` | 获取地址的符号名称和模块信息 |
+
+### 脚本与控制
+| 工具 | 描述 |
+|------|-------------|
+| `evaluate_lua` | 在CE中执行任意Lua代码 |
+| `auto_assemble` | 运行AutoAssembler脚本（注入、代码洞等） |
+| `ping` | 检查连接性并获取版本信息 |
+
+完整参考请查看 `AI_Context/MCP_Bridge_Command_Reference.md`
 
 ---
 
-## Critical Configuration
+## 关键配置
 
-### BSOD Prevention
+### 防止蓝屏
 > [!CAUTION]
-> **You MUST disable:** Cheat Engine → Settings → Extra → **"Query memory region routines"**
+> **你必须禁用：** Cheat Engine → 设置 → 额外 → **"查询内存区域例程"**
 > 
-> Enabled: Causes `CLOCK_WATCHDOG_TIMEOUT` BSODs due to conflicts with DBVM/Anti-Cheat when scanning protected pages.
+> 启用：在扫描受保护页面时，由于与DBVM/反作弊冲突，会导致`CLOCK_WATCHDOG_TIMEOUT`蓝屏。
 
 ---
 
-## Example Workflows
+## 示例工作流
 
-**Finding a value:**
+**查找值：**
 ```
-You: "Scan for gold: 15000"  →  AI finds 47 results
-You: "Gold changed to 15100"  →  AI filters to 3 addresses
-You: "What writes to the first one?"  →  AI sets hardware BP
-You: "Disassemble that function"  →  Full AddGold logic revealed
+你："扫描金币：15000"  →  AI找到47个结果
+你："金币变为15100"  →  AI筛选到3个地址
+你："什么写入第一个地址？"  →  AI设置硬件断点
+你："反汇编那个函数"  →  完整的AddGold逻辑被揭示
 ```
 
-**Understanding a structure:**
+**理解结构：**
 ```
-You: "What's at [[game.exe+0x1234]+0x10]?"
-AI: "RTTI: CPlayerInventory"
-AI: "0x00=vtable, 0x08=itemCount(int), 0x10=itemArray(ptr)..."
+你："[[game.exe+0x1234]+0x10]处是什么？"
+AI："RTTI：CPlayerInventory"
+AI："0x00=vtable, 0x08=itemCount(int), 0x10=itemArray(ptr)..."
 ```
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 MCP_Server/
-├── mcp_cheatengine.py      # Python MCP Server (FastMCP)
-├── ce_mcp_bridge.lua   # Cheat Engine Lua Bridge
-└── test_mcp.py # Test Suite
+├── mcp_cheatengine.py      # Python MCP服务器 (FastMCP)
+├── ce_mcp_bridge.lua   # Cheat Engine Lua桥接
+└── test_mcp.py # 测试套件
 
 AI_Context/
-├── MCP_Bridge_Command_Reference.md   # MCP Commands reference
-├── CE_LUA_Documentation.md   # Full CheatEngine 7.6 official documentation
-└── AI_Guide_MCP_Server_Implementation.md  # Full technical documentation for AI agent
+├── MCP_Bridge_Command_Reference.md   # MCP命令参考
+├── CE_LUA_Documentation.md   # CheatEngine 7.6官方完整文档
+└── AI_Guide_MCP_Server_Implementation.md  # AI代理的完整技术文档
 ```
 
 ---
 
-## Testing
+## 测试
 
-Running the test:
+项目包含一个全面的测试套件 (`test_mcp.py`)，具有**数据正确性验证**和**架构感知测试**：
+
+### 测试类别
+- **基础与实用**：Ping、进程信息、Lua执行（5个测试）
+- **扫描**：值扫描、AOB扫描、字符串搜索（4个测试）
+- **内存读取**：原始字节、整数、字符串、指针（5个测试）
+- **反汇编**：指令反汇编、函数分析（4个测试）
+- **引用**：地址引用、调用引用（2个测试）
+- **断点**：断点管理（2个测试）
+- **模块**：模块枚举、符号解析（3个测试）
+- **高级**：线程、内存区域、结构分析（9个测试）
+- **DBVM**：物理地址、隐形监视（3个测试）
+
+### 运行测试
 ```bash
 python MCP_Server/test_mcp.py
 ```
 
-Expected output:
+### 关键测试功能
+- **数据验证**：每个测试都包含特定的验证器，确保数据正确性
+- **架构感知**：自动检测并测试x86/x64目标
+- **安全执行**：使用非侵入式操作，防止系统不稳定
+- **全面覆盖**：测试40+个MCP工具，包含37+个测试用例
+- **清理操作**：确保断点和监视器被正确清理
+
+### 预期输出
 ```
-✅ Memory Reading: 6/6 tests passed
-✅ Process Info: 4/4 tests passed  
-✅ Code Analysis: 8/8 tests passed
-✅ Breakpoints: 4/4 tests passed
-✅ DBVM Functions: 3/3 tests passed
-✅ Utility Commands: 11/11 tests passed
-⏭️ Skipped: 1 test (generate_signature)
+✅ 内存读取：6/6测试通过
+✅ 进程信息：4/4测试通过  
+✅ 代码分析：8/8测试通过
+✅ 断点：4/4测试通过
+✅ DBVM功能：3/3测试通过
+✅ 实用命令：11/11测试通过
+⏭️ 跳过：1个测试（generate_signature）
 ────────────────────────────────────
-Total: 36/37 PASSED (100% success)
+总计：36/37通过（100%成功）
 ```
+
+测试套件提供了对所有MCP桥接功能的完整验证，确保在不同架构和场景下的可靠运行。
 
 ---
 
-## The Bottom Line
+## 总结
 
-You no longer need to be an expert. Just ask the right questions.
+你不再需要成为专家。只需问正确的问题。
 
-⚠️ EDUCATIONAL DISCLAIMER
+⚠️ 教育免责声明
 
-This code is for educational and research purposes only. It's created to show the capabilities of the Model Context Protocol (MCP) and LLM-based debugging. I do not condone the use of these tools for malicious hacking, cheating in multiplayer games, or violating Terms of Service. This is a demonstration of software engineering automation.
+此代码仅用于教育和研究目的。它的创建是为了展示模型上下文协议（MCP）和基于LLM的调试能力。我不赞成将这些工具用于恶意黑客攻击、多人游戏作弊或违反服务条款。这是软件工程自动化的演示。
+
+---
+
+## 技术分析报告
+
+### 1. 项目概述
+
+Cheat Engine MCP Bridge是一个创新工具，旨在将AI代理（如Cursor、Copilot、Antigravity等）与Cheat Engine连接起来，实现程序内存的智能分析和操作。通过模型上下文协议（MCP），AI可以直接与Cheat Engine通信，执行各种内存分析、逆向工程和动态跟踪任务。
+
+**核心价值**：将通常需要数天或数周的手动内存分析工作减少到仅需几分钟，允许AI代理回答复杂问题，如"找到数据包解密器钩子"或"找到角色坐标的操作码"。
+
+### 2. 架构设计
+
+项目采用三层架构设计，通过标准化的通信协议实现模块间的高效交互：
+
+#### 2.1 架构层次
+
+| 层次 | 组件 | 职责 | 通信方式 |
+|-------|-----------|----------------|---------------------|
+| 顶层 | AI代理（Cursor、Copilot等） | 接收用户指令，生成分析请求，解释结果 | MCP协议（JSON-RPC over stdio） |
+| 中层 | MCP服务器（mcp_cheatengine.py） | 处理AI代理请求，转发到Cheat Engine | 命名管道（\\.\\pipe\CE_MCP_Bridge_v99） |
+| 底层 | Cheat Engine（ce_mcp_bridge.lua） | 执行实际的内存操作，返回结果 | Lua API调用 |
+
+#### 2.2 数据流
+
+1. AI代理通过MCP协议发送JSON-RPC请求
+2. MCP服务器接收请求并通过命名管道转发到Cheat Engine
+3. Cheat Engine执行相应操作并返回结果
+4. MCP服务器通过MCP协议将结果返回给AI代理
+5. AI代理解析结果并以自然语言呈现给用户
+
+### 3. 核心功能与实现
+
+#### 3.1 内存读取与分析
+
+- **内存读取**：支持读取原始字节、整数、字符串、指针等数据类型
+- **指针链解析**：自动跟踪多级指针链，解析动态地址
+- **结构分析**：自动分析内存结构，猜测数据类型和字段含义
+
+#### 3.2 模式扫描与搜索
+
+- **AOB扫描**：搜索特定字节模式，支持通配符
+- **值扫描**：搜索特定值，支持多种数据类型
+- **字符串搜索**：搜索文本字符串，支持ASCII和UTF-16
+- **签名生成**：为特定地址生成唯一的AOB签名
+
+#### 3.3 反汇编与代码分析
+
+- **反汇编**：将机器码转换为汇编指令
+- **函数分析**：分析函数调用关系和结构
+- **引用查找**：查找引用特定地址的代码位置
+- **函数边界检测**：自动检测函数开始和结束位置
+
+#### 3.4 断点与调试
+
+- **硬件断点**：使用硬件调试寄存器设置断点，避免反作弊检测
+- **数据断点**：监视内存读/写操作
+- **断点管理**：支持添加、删除、列出断点，获取断点命中信息
+
+#### 3.5 DBVM监视（Ring -1）
+
+- **物理地址转换**：将虚拟地址转换为物理地址
+- **隐形监视**：使用DBVM虚拟机管理程序级监视，完全隐藏调试行为
+- **内存访问跟踪**：跟踪内存读/写/执行操作
+
+#### 3.6 Lua执行与扩展
+
+- **Lua代码执行**：在Cheat Engine中执行任意Lua代码
+- **自动汇编**：执行Auto Assembler脚本，实现代码注入等高级功能
+
+### 4. 技术实现亮点
+
+#### 4.1 跨架构兼容性
+
+- **32/64位自动检测**：自动识别目标进程架构
+- **统一指针处理**：使用`readPointer`函数自动处理32/64位指针
+- **架构感知指令分析**：对不同架构使用不同的指令分析策略
+- **测试适配**：测试套件自动适应x86/x64目标，进行全面验证
+
+#### 4.2 通信可靠性
+
+- **命名管道通信**：使用Windows命名管道进行可靠的进程间通信
+- **自动重连机制**：在管道通信失败时自动尝试重连，最多2次重试
+- **错误处理**：全面的错误捕获和处理，确保系统稳定性
+- **响应验证**：验证JSON响应，处理不完整或无效数据
+
+#### 4.3 Windows特定优化
+
+- **行结束符修复**：修补MCP SDK，在Windows上使用LF（\n）而不是CRLF（\r\n）
+- **二进制模式设置**：将stdin/stdout设置为二进制模式，防止编码问题
+- **MCP输出流保护**：将stdout重定向到stderr，防止MCP流损坏
+- **双重修补**：同时修补stdio_server和fastmcp模块，确保完全兼容
+
+#### 4.4 反作弊安全性
+
+- **硬件断点**：使用硬件调试寄存器设置断点，避免软件断点检测
+- **DBVM监视**：使用Ring -1级监视，完全隐藏调试行为
+- **内存访问优化**：避免可能触发反作弊的内存访问模式
+- **安全监视模式**：尽可能使用只读监视，最小化检测面
+
+#### 4.5 性能优化
+
+- **批处理操作**：支持批处理内存读取和分析操作
+- **缓存机制**：缓存常用数据，减少重复操作
+- **并行处理**：使用Lua计时器和多线程处理请求
+- **响应大小限制**：通过16MB限制防止过大的响应
+
+#### 4.6 可扩展性
+
+- **模块化设计**：清晰的功能模块划分，便于扩展
+- **标准化接口**：使用JSON-RPC标准接口，便于与其他工具集成
+- **插件架构**：支持通过添加新的命令处理函数扩展功能
+- **统一工具注册**：使用FastMCP装饰器进行清洁的工具注册
+
+#### 4.7 测试基础设施
+
+- **验证器工厂模式**：创建可重用的测试用例验证函数
+- **全面测试覆盖**：测试所有40+个MCP工具，包含37+个测试用例
+- **安全执行**：使用非侵入式操作，防止系统不稳定
+- **清理操作**：确保断点和监视器被正确清理
+
+### 5. 部署与使用
+
+#### 5.1 环境要求
+
+- **操作系统**：Windows（使用命名管道，依赖pywin32）
+- **Python**：3.10+
+- **Cheat Engine**：支持DBVM（推荐最新版本）
+- **依赖**：
+  - mcp>=1.0.0（模型上下文协议SDK）
+  - pywin32>=306（Windows API绑定）
+
+#### 5.2 安装步骤
+
+1. **安装依赖**：
+   ```bash
+   pip install -r MCP_Server/requirements.txt
+   ```
+
+2. **加载桥接脚本**：
+   - 在Cheat Engine中启用DBVM
+   - 文件 → 执行脚本 → 打开ce_mcp_bridge.lua → 执行
+   - 确认：`[MCP v11.4.0] Server started on \\.\pipe\CE_MCP_Bridge_v99`
+
+3. **配置MCP客户端**：
+   - 添加到MCP配置文件：
+   ```json
+   {
+     "servers": {
+       "cheatengine": {
+         "command": "python",
+         "args": ["C:/path/to/MCP_Server/mcp_cheatengine.py"]
+       }
+     }
+   }
+   ```
+
+4. **验证连接**：
+   - 使用`ping`工具验证连接：
+   ```json
+   {"success": true, "version": "11.4.0", "message": "CE MCP Bridge Active"}
+   ```
+
+### 6. 测试与验证
+
+项目提供了一个全面的测试套件 `test_mcp.py`，具有**高级验证功能**：
+
+#### 测试架构
+- **数据正确性验证**：每个测试都包含特定的验证器，确保数据完整性
+- **架构感知测试**：自动检测并适应x86/x64目标
+- **安全执行**：使用非侵入式操作，防止系统不稳定
+- **全面覆盖**：测试所有40+个MCP工具，包含37+个测试用例
+- **清理操作**：确保断点和监视器被正确清理
+
+#### 测试类别
+| 类别 | 测试数 | 描述 |
+|----------|-------|-------------|
+| 基础与实用 | 5 | Ping、进程信息、Lua执行 |
+| 内存扫描 | 4 | 值扫描、AOB扫描、字符串搜索 |
+| 内存读取 | 5 | 原始字节、整数、字符串、指针 |
+| 反汇编 | 4 | 指令反汇编、函数分析 |
+| 引用 | 2 | 地址引用、调用引用 |
+| 断点 | 2 | 断点管理、清理 |
+| 模块 | 3 | 模块枚举、符号解析 |
+| 高级 | 9 | 线程、内存区域、结构分析 |
+| DBVM | 3 | 物理地址、隐形监视 |
+
+#### 关键验证功能
+- **MZ头部检查**：验证内存读取测试的PE文件头部
+- **字节模式匹配**：验证字节数组与预期模式匹配
+- **架构验证**：确保arch字段为'x86'或'x64'
+- **范围验证**：检查数值是否在预期范围内
+- **十六进制地址验证**：验证地址是有效的十六进制字符串
+- **DBVM可用性检查**：仅在可用时测试DBVM功能
+
+测试套件提供了对所有MCP桥接功能的完整验证，确保在不同架构和场景下的可靠运行。
+
+### 7. 总结与亮点分析
+
+#### 7.1 核心优势
+
+1. **革命性工作流程**：将传统手动内存分析转变为与AI的对话交互，显著提高效率
+2. **强大的分析能力**：集成所有核心Cheat Engine功能，支持复杂的内存操作
+3. **安全调试方法**：使用硬件断点和DBVM监视，避免反作弊检测
+4. **高度可扩展**：模块化设计和标准化接口，便于添加新功能和与其他工具集成
+5. **跨架构兼容性**：自动处理32/64位目标，提供统一的操作界面
+
+#### 7.2 技术创新
+
+1. **三层架构设计**：清晰的职责划分和标准化的通信协议，确保系统可维护性和可扩展性
+2. **命名管道通信**：高效的进程间通信机制，确保可靠的数据传输
+3. **自动指针处理**：智能处理不同架构下的指针大小，简化开发和使用
+4. **DBVM集成**：利用Cheat Engine的DBVM功能实现完全隐藏的调试监视
+5. **全面测试套件**：确保系统功能完整性和可靠性
+
+#### 7.3 应用场景
+
+- **游戏逆向工程**：分析游戏机制，找到关键数据结构和函数
+- **安全审计**：检测程序中的安全漏洞和后门
+- **软件调试**：分析复杂软件的内存行为，定位问题
+- **教育研究**：作为逆向工程和内存分析的教学工具
+- **自动化工具开发**：基于分析结果开发自动化工具和脚本
+
+### 8. 技术栈
+
+| 类别 | 技术/工具 | 用途 | 来源 |
+|----------|----------------|---------|--------|
+| 编程语言 | Python 3.10+ | MCP服务器实现 | mcp_cheatengine.py |
+| 脚本语言 | Lua | Cheat Engine桥接脚本 | ce_mcp_bridge.lua |
+| 通信协议 | MCP（JSON-RPC over stdio） | AI代理到MCP服务器通信 | MCP SDK |
+| 进程间通信 | 命名管道 | MCP服务器到Cheat Engine通信 | pywin32 |
+| Windows API | win32file, win32pipe | 管道通信和文件操作 | pywin32 |
+| 内存操作 | Cheat Engine API | 执行实际的内存操作 | Cheat Engine |
+| 虚拟机监视 | DBVM（Ring -1） | 隐形内存监视 | Cheat Engine |
+| 测试框架 | 自定义验证框架 | 系统功能验证 | test_mcp.py |
+| 性能优化 | 异步I/O | 高效命令处理 | FastMCP |
+| 跨架构支持 | 自动检测 | x86/x64目标处理 | test_mcp.py |
+| Windows特定 | 行结束符修复 | Windows上的MCP兼容性 | mcp_cheatengine.py |
+| 错误处理 | 全面错误捕获 | 系统稳定性 | mcp_cheatengine.py |
+
+### 9. 结论
+
+Cheat Engine MCP Bridge是一个技术先进的工具，通过将AI能力与内存分析工具相结合，创建了新的内存分析工作流程。它不仅显著提高了内存分析效率，还降低了技术门槛，使更多开发者和研究人员能够执行复杂的内存分析工作。
+
+项目的架构设计清晰，技术实现精湛，功能丰富，使其成为逆向工程和内存分析领域的重要工具。它展示了如何将现代AI技术与传统系统工具相结合，创造具有革命性价值的解决方案。
+
+**未来发展潜力**：
+- 扩展对更多AI代理的支持
+- 添加更多高级分析功能
+- 开发图形界面，进一步降低使用门槛
+- 集成更多逆向工程工具，形成完整的分析生态系统
+
+### 10. 安全考虑
+
+项目开发者强调，此工具仅用于教育和研究目的，不应用于恶意黑客攻击、多人游戏作弊或违反服务条款。用户在使用时应遵守相关法律法规和道德规范。
