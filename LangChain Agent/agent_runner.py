@@ -40,7 +40,7 @@ class OllamaLLMWrapper:
 
 def run_with_langchain(prompt: str, ollama: OllamaClient, tools: List[Any], steps: int = 6) -> None:
     try:
-        from langchain.llms.base import LLM
+        from langchain_core.language_models import LLM  #在新版 LangChain 中，原始的 LLM基类已经从 langchain.llms.base迁移到了 langchain_core.language_models​ 模块中
         from langchain.agents import initialize_agent, AgentType
 
         # 构建一个最小 LLM 接口的包装器

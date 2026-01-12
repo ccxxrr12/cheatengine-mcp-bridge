@@ -14,14 +14,9 @@ from error_policy import retry_on_exception, require_destructive_approval
 
 logger = logging.getLogger(__name__)
 
-# 导入 ce_client（支持两种导入路径以提高健壮性）
-try:
-    from mcp_cheatengine import ce_client  # when running from MCP_Server working dir
-except Exception:
-    try:
-        from MCP_Server.mcp_cheatengine import ce_client  # when running from repo root
-    except Exception:
-        ce_client = None
+# 导入 ce_client
+from MCP_Server.mcp_cheatengine import ce_client  # when running from MCP_Server working dir
+
 
 
 def ensure_client():
