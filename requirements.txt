@@ -1,0 +1,30 @@
+# Cheat Engine MCP Bridge Dependencies
+# Install: pip install -r requirements.txt
+
+# Core MCP Protocol Support
+mcp>=1.0.0
+
+# Windows API Bindings
+pywin32>=306
+
+# HTTP Client for Ollama Integration
+requests>=2.25.0
+httpx>=0.24.0
+tenacity>=8.2.0
+
+# Environment Variable Loading
+python-dotenv>=0.19.0
+
+# LangChain for AI Agent Integration (optional but recommended)
+langchain>=0.0.300
+langchain-community>=0.0.30
+langchain-core>=0.1.0
+
+# Data Validation
+pydantic>=1.10.0
+
+# Optional: For enhanced LLM interactions
+ollama>=0.1.0
+
+# Testing dependencies (optional)
+pytest>=7.0.0
