@@ -128,6 +128,18 @@ pip install mcp pywin32
 "反汇编入口点"
 ```
 
+### 5. 其他使用环境
+
+除了上述方法外，你还可以在以下环境中使用 Cheat Engine MCP Bridge：
+
+- **VSCode**：使用 Cline 或 RooCode 扩展
+- **Trae IDE**：原生支持 MCP 协议
+- **Cursor**：内置 MCP 支持
+- **Copilot**：通过插件支持
+- **直接 Python 客户端**：使用提供的示例代码
+
+详细的配置和使用说明请参考 `USAGE_GUIDE.md` 文件。
+
 ---
 
 ## 可用的40个MCP工具
