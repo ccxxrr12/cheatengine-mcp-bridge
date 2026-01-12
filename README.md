@@ -80,12 +80,9 @@ flowchart TD
 ## 安装
 
 ```bash
-pip install -r MCP_Server/requirements.txt
+pip install -r requirements.txt
 ```
-或手动安装：
-```bash
-pip install mcp pywin32
-```
+
 
 > [!NOTE]
 > **仅支持Windows** - 使用命名管道 (`pywin32`)
@@ -447,7 +444,7 @@ Cheat Engine MCP Bridge是一个创新工具，旨在将AI代理（如Cursor、C
 
 1. **安装依赖**：
    ```bash
-   pip install -r MCP_Server/requirements.txt
+   pip install -r requirements.txt
    ```
 
 2. **加载桥接脚本**：

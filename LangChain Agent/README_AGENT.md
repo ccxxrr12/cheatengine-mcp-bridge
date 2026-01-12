@@ -13,7 +13,6 @@
 1. 安装依赖（建议使用虚拟环境）：
 
 ```bash
-cd MCP_Server
 pip install -r requirements.txt
 ```
 
