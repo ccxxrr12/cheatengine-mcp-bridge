@@ -75,9 +75,10 @@ def build_tool_metadata() -> List[Dict[str, Any]]:
 
 
 def make_langchain_tools() -> List[Any]:
-    """如果安装了 langchain，返回可直接注册给 `initialize_agent` 的工具对象。
+    """如果安装了 langchain，返回可直接注册给 LangChain agent 的工具对象。
 
     兼容性说明：不同 langchain 版本的工具 API 可能不同；此函数尝试优雅退化为简单 dict 列表。
+    支持新版 create_tool_calling_agent 或旧版 initialize_agent。
     """
     try:
         from langchain.tools import Tool

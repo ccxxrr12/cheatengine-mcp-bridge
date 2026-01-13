@@ -12,6 +12,12 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_community.tools import Tool
+from langchain_community.agents import create_tool_calling_agent
+from langchain.agents import AgentExecutor
+from langchain_community.chat_models import ChatOllama
+
 from .ollama_adapter import OllamaClient
 from .ce_tools import make_langchain_tools, build_tool_metadata
 
@@ -40,28 +46,38 @@ class OllamaLLMWrapper:
 
 def run_with_langchain(prompt: str, ollama: OllamaClient, tools: List[Any], steps: int = 6) -> None:
     try:
-        from langchain_core.language_models import LLM  #在新版 LangChain 中，原始的 LLM基类已经从 langchain.llms.base迁移到了 langchain_core.language_models​ 模块中
-        from langchain.agents import initialize_agent, AgentType
+        # 创建ChatOllama实例
+        llm = ChatOllama(
+            base_url=ollama.base_url,
+            model=ollama.model,
+            temperature=0.0
+        )
 
-        # 构建一个最小 LLM 接口的包装器
-        class _LLM(LLM):
-            def _call(self, prompt_text: str, stop: Any = None) -> str:
-                return ollama.generate(prompt_text, max_tokens=512, temperature=0.0)["text"]
+        # 创建提示模板
+        prompt_template = ChatPromptTemplate.from_messages([
+            ("system", "You are a helpful assistant that can use tools to analyze memory, disassemble code, and manage breakpoints in Cheat Engine context. Use the available tools when needed."),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ])
 
-            @property
-            def _identifying_params(self) -> Dict[str, Any]:
-                return {"model": ollama.model}
+        # 创建工具调用代理
+        agent = create_tool_calling_agent(
+            llm=llm,
+            tools=tools,
+            prompt=prompt_template
+        )
 
-            @property
-            def _llm_type(self) -> str:
-                return "ollama"
+        # 创建代理执行器
+        agent_executor = AgentExecutor(
+            agent=agent,
+            tools=tools,
+            verbose=True,
+            max_iterations=steps,
+            early_stopping_method="force"
+        )
 
-        lc_llm = _LLM()
-
-        # 如果 make_langchain_tools 返回的是 Tool 对象列表可直接使用
-        agent = initialize_agent(tools, lc_llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION, max_iterations=steps)
         logger.info("Starting agent (LangChain) for prompt: %s", prompt)
-        result = agent.run(prompt)
+        result = agent_executor.invoke({"input": prompt})
         logger.info("Agent finished. Result:\n%s", result)
     except Exception as e:
         logger.exception("LangChain integration failed, falling back to direct loop: %s", e)
@@ -98,6 +114,7 @@ def run_fallback_loop(prompt: str, ollama: OllamaClient, tools_meta: List[Dict[s
 
         # 执行工具
         try:
+            raw_result = tool["func"](**args)
             raw_result = tool["func"](**args)
             logger.info("Tool %s result: %s", name, json.dumps(raw_result, ensure_ascii=False)[:1000])
             # 将结果反馈给 LLM 以进行下步计划
