@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen3:8b", timeout: int = 60):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "llama3.1:8b", timeout: int = 60):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
