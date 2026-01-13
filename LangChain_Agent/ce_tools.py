@@ -15,7 +15,7 @@ from error_policy import retry_on_exception, require_destructive_approval
 logger = logging.getLogger(__name__)
 
 # 导入 ce_client
-from MCP_Server.mcp_cheatengine import ce_client  # when running from MCP_Server working dir
+from ..MCP_Server.mcp_cheatengine import ce_client  # when running from MCP_Server working dir
 
 
 
