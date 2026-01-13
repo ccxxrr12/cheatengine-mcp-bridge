@@ -1,5 +1,8 @@
 from ..models.core_models import ExecutionPlan, SubTask, TaskState
 from ..models.base import ToolMetadata, ToolCategory
+from ..llm.prompt_manager import PromptManager
+from ..llm.response_parser import ResponseParser
+from ..llm.client import OllamaClient
 from typing import List, Dict, Any, Optional
 import re
 
@@ -16,14 +19,20 @@ class TaskType:
 class TaskPlanner:
     """AI 代理的任务规划器。"""
     
-    def __init__(self, tool_registry):
+    def __init__(self, tool_registry, ollama_client: Optional[OllamaClient] = None, use_llm: bool = True):
         """
         初始化任务规划器。
         
         Args:
             tool_registry: 用于工具选择的工具注册表
+            ollama_client: 用于LLM推理的Ollama客户端
+            use_llm: 是否使用LLM进行规划
         """
         self.tool_registry = tool_registry
+        self.ollama_client = ollama_client
+        self.use_llm = use_llm
+        self.prompt_manager = PromptManager() if use_llm else None
+        self.response_parser = ResponseParser() if use_llm else None
         self.logger = None  # 将由代理设置
         
     def plan(self, request: str) -> ExecutionPlan:
@@ -36,7 +45,104 @@ class TaskPlanner:
         Returns:
             任务的执行计划
         """
-        # 从请求中识别意图
+        if self.use_llm and self.ollama_client:
+            return self._plan_with_llm(request)
+        else:
+            return self._plan_with_rules(request)
+    
+    def _plan_with_llm(self, request: str) -> ExecutionPlan:
+        """
+        使用LLM进行智能任务规划。
+        
+        Args:
+            request: 用户的请求
+            
+        Returns:
+            任务的执行计划
+        """
+        try:
+            available_tools = [tool['metadata'] for tool in self.tool_registry._tools.values()]
+            tool_names = [tool.name for tool in available_tools]
+            
+            prompt = self.prompt_manager.get_task_planning_prompt(
+                request=request,
+                available_tools=tool_names,
+                context={}
+            )
+            
+            system_prompt = self.prompt_manager.get_system_prompt()
+            messages = self.prompt_manager.format_chat_messages(
+                system_prompt=system_prompt,
+                user_prompt=prompt
+            )
+            
+            response = self.ollama_client.chat(messages)
+            
+            if 'message' in response and 'content' in response['message']:
+                response_text = response['message']['content']
+                task_plan = self.response_parser.parse_task_plan(response_text)
+                
+                if task_plan:
+                    subtasks = self._parse_llm_subtasks(task_plan.get('subtasks', []))
+                    task_type = task_plan.get('task_type', TaskType.COMPREHENSIVE_ANALYSIS)
+                    
+                    plan = ExecutionPlan(
+                        task_id=self._generate_task_id(),
+                        task_type=task_type,
+                        description=request,
+                        subtasks=subtasks,
+                        estimated_steps=len(subtasks)
+                    )
+                    
+                    if self.logger:
+                        self.logger.info(f"LLM-generated plan for request: {request}")
+                    
+                    return plan
+            
+            if self.logger:
+                self.logger.warning("Failed to parse LLM response, falling back to rule-based planning")
+            
+            return self._plan_with_rules(request)
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error in LLM planning: {e}, falling back to rule-based planning")
+            return self._plan_with_rules(request)
+    
+    def _parse_llm_subtasks(self, llm_subtasks: List[Dict[str, Any]]) -> List[SubTask]:
+        """
+        解析LLM生成的子任务。
+        
+        Args:
+            llm_subtasks: LLM返回的子任务列表
+            
+        Returns:
+            SubTask对象列表
+        """
+        subtasks = []
+        
+        for i, st in enumerate(llm_subtasks):
+            subtask = SubTask(
+                id=st.get('id', i + 1),
+                description=st.get('description', f"Subtask {i + 1}"),
+                tools=st.get('tools', []),
+                expected_output=st.get('expected_output', ''),
+                dependencies=st.get('dependencies', [])
+            )
+            subtasks.append(subtask)
+        
+        return subtasks
+    
+    def _plan_with_rules(self, request: str) -> ExecutionPlan:
+        """
+        使用规则引擎进行任务规划（回退方案）。
+        
+        Args:
+            request: 用户的请求
+            
+        Returns:
+            任务的执行计划
+        """
         intent = self.identify_intent(request)
         
         # 分类任务类型

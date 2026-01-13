@@ -5,5 +5,7 @@ Cheat Engine AI Agent 的 LLM (Large Language Model) 模块。
 包括提示生成和响应处理。
 """
 from .client import OllamaClient
+from .prompt_manager import PromptManager
+from .response_parser import ResponseParser
 
-__all__ = ['OllamaClient']
+__all__ = ['OllamaClient', 'PromptManager', 'ResponseParser']

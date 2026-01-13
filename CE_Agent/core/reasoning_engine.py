@@ -3,6 +3,9 @@ from ..models.core_models import (
     ExecutionContext, TaskState, ExecutionStep, ToolResult
 )
 from ..utils.logger import get_logger
+from ..llm.prompt_manager import PromptManager
+from ..llm.response_parser import ResponseParser
+from ..llm.client import OllamaClient
 from typing import List, Dict, Any, Optional
 import time
 
@@ -10,13 +13,107 @@ import time
 class ReasoningEngine:
     """AI 代理的推理引擎。"""
     
-    def __init__(self):
-        """初始化推理引擎。"""
+    def __init__(self, ollama_client: Optional[OllamaClient] = None, use_llm: bool = True):
+        """
+        初始化推理引擎。
+        
+        Args:
+            ollama_client: 用于LLM推理的Ollama客户端
+            use_llm: 是否使用LLM进行推理
+        """
+        self.ollama_client = ollama_client
+        self.use_llm = use_llm
+        self.prompt_manager = PromptManager() if use_llm else None
+        self.response_parser = ResponseParser() if use_llm else None
         self.logger = get_logger(__name__)
     
     def analyze_result(self, result: ToolResult, context: ExecutionContext) -> Analysis:
         """
         分析工具执行的结果。
+        
+        Args:
+            result: 工具执行的结果
+            context: 当前执行上下文
+            
+        Returns:
+            结果的分析
+        """
+        if self.use_llm and self.ollama_client:
+            return self._analyze_with_llm(result, context)
+        else:
+            return self._analyze_with_rules(result, context)
+    
+    def _analyze_with_llm(self, result: ToolResult, context: ExecutionContext) -> Analysis:
+        """
+        使用LLM进行智能结果分析。
+        
+        Args:
+            result: 工具执行的结果
+            context: 当前执行上下文
+            
+        Returns:
+            结果的分析
+        """
+        try:
+            result_dict = {
+                'tool_name': result.tool_name,
+                'success': result.success,
+                'result': result.result,
+                'error': result.error,
+                'execution_time': result.execution_time
+            }
+            
+            context_dict = {
+                'task_id': context.task_id,
+                'current_step': context.current_step,
+                'total_steps': context.execution_plan.estimated_steps,
+                'state': context.state.value
+            }
+            
+            prompt = self.prompt_manager.get_result_analysis_prompt(
+                result=result_dict,
+                tool_name=result.tool_name,
+                context=context_dict
+            )
+            
+            system_prompt = self.prompt_manager.get_system_prompt()
+            messages = self.prompt_manager.format_chat_messages(
+                system_prompt=system_prompt,
+                user_prompt=prompt
+            )
+            
+            response = self.ollama_client.chat(messages)
+            
+            if 'message' in response and 'content' in response['message']:
+                response_text = response['message']['content']
+                analysis_dict = self.response_parser.parse_result_analysis(response_text)
+                
+                if analysis_dict:
+                    return Analysis(
+                        success=analysis_dict.get('success', result.success),
+                        findings=[{
+                            'type': 'finding',
+                            'message': finding,
+                            'data': None
+                        } for finding in analysis_dict.get('findings', [])],
+                        conclusions=analysis_dict.get('insights', []),
+                        next_steps=analysis_dict.get('next_steps', []),
+                        confidence=0.8
+                    )
+            
+            if self.logger:
+                self.logger.warning("Failed to parse LLM analysis, falling back to rule-based analysis")
+            
+            return self._analyze_with_rules(result, context)
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error in LLM analysis: {e}, falling back to rule-based analysis")
+            return self._analyze_with_rules(result, context)
+    
+    def _analyze_with_rules(self, result: ToolResult, context: ExecutionContext) -> Analysis:
+        """
+        使用规则引擎进行结果分析（回退方案）。
         
         Args:
             result: 工具执行的结果
@@ -157,6 +254,85 @@ class ReasoningEngine:
             
         Returns:
             A decision to guide next actions
+        """
+        if self.use_llm and self.ollama_client:
+            return self._make_decision_with_llm(evaluation, context)
+        else:
+            return self._make_decision_with_rules(evaluation, context)
+    
+    def _make_decision_with_llm(self, evaluation: StateEvaluation, context: ExecutionContext) -> Decision:
+        """
+        使用LLM进行智能决策。
+        
+        Args:
+            evaluation: 状态评估
+            context: 当前执行上下文
+            
+        Returns:
+            决策对象
+        """
+        try:
+            evaluation_dict = {
+                'current_state': evaluation.current_state.value,
+                'progress': evaluation.progress,
+                'success': evaluation.success,
+                'issues': evaluation.issues,
+                'recommendations': evaluation.recommendations
+            }
+            
+            context_dict = {
+                'task_id': context.task_id,
+                'current_step': context.current_step,
+                'total_steps': context.execution_plan.estimated_steps,
+                'task_type': context.execution_plan.task_type
+            }
+            
+            prompt = self.prompt_manager.get_reasoning_prompt(
+                current_result=evaluation_dict,
+                context=context_dict,
+                available_tools=[]
+            )
+            
+            system_prompt = self.prompt_manager.get_system_prompt()
+            messages = self.prompt_manager.format_chat_messages(
+                system_prompt=system_prompt,
+                user_prompt=prompt
+            )
+            
+            response = self.ollama_client.chat(messages)
+            
+            if 'message' in response and 'content' in response['message']:
+                response_text = response['message']['content']
+                reasoning_dict = self.response_parser.parse_reasoning(response_text)
+                
+                if reasoning_dict:
+                    return Decision(
+                        action=reasoning_dict.get('next_action', 'continue'),
+                        reason=reasoning_dict.get('reasoning', ''),
+                        confidence=reasoning_dict.get('confidence', 0.8),
+                        next_steps=reasoning_dict.get('next_steps', [])
+                    )
+            
+            if self.logger:
+                self.logger.warning("Failed to parse LLM decision, falling back to rule-based decision")
+            
+            return self._make_decision_with_rules(evaluation, context)
+            
+        except Exception as e:
+            if self.logger:
+                self.logger.error(f"Error in LLM decision: {e}, falling back to rule-based decision")
+            return self._make_decision_with_rules(evaluation, context)
+    
+    def _make_decision_with_rules(self, evaluation: StateEvaluation, context: ExecutionContext) -> Decision:
+        """
+        使用规则引擎进行决策（回退方案）。
+        
+        Args:
+            evaluation: 状态评估
+            context: 当前执行上下文
+            
+        Returns:
+            决策对象
         """
         try:
             action = ""

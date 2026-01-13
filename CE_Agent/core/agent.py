@@ -43,8 +43,8 @@ class Agent:
         self.logger = get_logger(__name__)
         
         # 初始化核心组件
-        self.task_planner = TaskPlanner(tool_registry)
-        self.reasoning_engine = ReasoningEngine()
+        self.task_planner = TaskPlanner(tool_registry, ollama_client, use_llm=True)
+        self.reasoning_engine = ReasoningEngine(ollama_client, use_llm=True)
         self.context_manager = ContextManager()
         self.result_synthesizer = ResultSynthesizer()
         
