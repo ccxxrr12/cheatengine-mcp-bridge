@@ -12,24 +12,42 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List
 
-from dotenv import load_dotenv
-
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.tools import Tool
-from langchain.agents import create_agent
+
+# 尝试不同的导入方式以兼容不同版本的LangChain
+try:
+    # 最新版LangChain - create_agent
+    from langchain.agents import create_agent
+    from langchain.agents import AgentExecutor
+    create_react_agent = create_agent
+except ImportError:
+    try:
+        # 旧版LangChain - create_react_agent
+        from langchain.agents import create_react_agent
+        from langchain.agents import AgentExecutor
+    except ImportError:
+        try:
+            # 从langgraph导入（兼容版）
+            from langgraph.prebuilt import create_react_agent
+            from langgraph.prebuilt import create_react_agent as AgentExecutor
+        except ImportError:
+            # 回退到内置执行循环
+            create_react_agent = None
+            AgentExecutor = None
+from langchain_core.prompts import PromptTemplate
 from langchain_ollama import ChatOllama
 
+from ..config import settings
 from .ollama_adapter import OllamaClient
 from .ce_tools import make_langchain_tools, build_tool_metadata
 
-load_dotenv()
-
-LOG_LEVEL = os.environ.get("AGENT_LOG_LEVEL", "INFO")
-logging.basicConfig(level=LOG_LEVEL)
+# 配置日志
+logging.basicConfig(level=settings.AGENT_LOG_LEVEL)
 logger = logging.getLogger("mcp_agent")
 
 # 创建日志目录和日志文件
-log_dir = "logs"
+log_dir = settings.LOG_DIR
 os.makedirs(log_dir, exist_ok=True)
 log_filename = os.path.join(log_dir, f"agent_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
 
@@ -58,6 +76,12 @@ class OllamaLLMWrapper:
 
 def run_with_langchain(prompt: str, ollama: OllamaClient, tools: List[Any], steps: int = 6) -> None:
     try:
+        # 检查create_react_agent是否可用
+        if create_react_agent is None:
+            logger.error("create_react_agent not available, falling back to direct loop")
+            run_fallback_loop(prompt, ollama, tools, steps)
+            return
+            
         # 创建ChatOllama实例
         llm = ChatOllama(
             base_url=ollama.base_url,
@@ -67,21 +91,68 @@ def run_with_langchain(prompt: str, ollama: OllamaClient, tools: List[Any], step
         
         logger.info(f"Using Ollama model: {ollama.model} at {ollama.base_url}")
 
-        # 创建工具调用代理
-        agent = create_agent(
-            model=llm,
-            tools=tools
+        # 创建代理提示
+        agent_prompt = PromptTemplate(
+            input_variables=["input", "agent_scratchpad"],
+            template="""
+            You are a Cheat Engine memory analysis assistant. Use the available tools to help analyze memory and answer user queries.
+
+            Input: {input}
+
+            Scratchpad:
+            {agent_scratchpad}
+
+            Instructions:
+            1. Analyze the user's request
+            2. Use the appropriate tools to gather information
+            3. Analyze the results and provide a comprehensive answer
+            4. If you need more information, ask the user for clarification
+            """
         )
 
-        logger.info("Starting agent (LangChain) for prompt: %s", prompt)
-        result = agent.invoke({"input": prompt})
+        # 处理不同版本的API
+        try:
+            # 尝试使用model参数（最新版）
+            agent = create_react_agent(
+                model=llm,
+                tools=tools
+            )
+            
+            logger.info("Starting agent (LangChain - model parameter) for prompt: %s", prompt)
+            result = agent.invoke({"input": prompt})
+        except TypeError:
+            try:
+                # 尝试使用llm参数（旧版）
+                agent = create_react_agent(
+                    llm=llm,
+                    tools=tools,
+                    prompt=agent_prompt
+                )
+
+                # 创建代理执行器
+                agent_executor = AgentExecutor(
+                    agent=agent,
+                    tools=tools,
+                    verbose=True,
+                    handle_parsing_errors=True
+                )
+
+                logger.info("Starting agent (LangChain - llm parameter) for prompt: %s", prompt)
+                result = agent_executor.invoke({"input": prompt})
+            except Exception as e:
+                logger.exception("Failed to create agent: %s", e)
+                run_fallback_loop(prompt, ollama, tools, steps)
+                return
+        
         logger.info("Agent finished. Result:\n%s", result)
+        print(f"\n✅ 分析完成，最终结果:")
+        print(result.get("output", "No output available"))
     except Exception as e:
         logger.exception("LangChain integration failed, falling back to direct loop: %s", e)
         run_fallback_loop(prompt, ollama, tools, steps)
 
 
-def run_fallback_loop(prompt: str, ollama: OllamaClient, tools_meta: List[Dict[str, Any]], max_steps: int = 6) -> None:
+def run_fallback_loop(prompt: str, ollama: OllamaClient, tools_meta: List[Dict[str, Any]], max_steps: int = settings.MAX_AGENT_STEPS) -> None:
     """当没有 langchain 或集成失败时使用的回退调度器。
 
     协议约定：OLLAMA 输出应包含可解析的工具调用 JSON（见 ollama_adapter.extract_tool_call）。
@@ -217,21 +288,21 @@ def run_interactive_mode(ollama: OllamaClient, tools: List[Any]):
 
 
 def main():
-    model_name = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
-    ollama = OllamaClient(base_url=os.environ.get("OLLAMA_URL", "http://localhost:11434"),
+    model_name = settings.OLLAMA_MODEL
+    ollama = OllamaClient(base_url=settings.OLLAMA_URL,
                           model=model_name)
     tools = make_langchain_tools()
-    prompt = os.environ.get("AGENT_PROMPT", "Perform analysis: ping and read memory at 0x401000")
+    prompt = settings.AGENT_PROMPT or "Perform analysis: ping and read memory at 0x401000"
     logger.info(f"Starting agent with model: {model_name}")
     
-    # 检查是否设置了AGENT_PROMPT环境变量，如果没有，则进入交互模式
-    if "AGENT_PROMPT" in os.environ:
+    # 检查是否设置了AGENT_PROMPT配置，如果没有，则进入交互模式
+    if settings.AGENT_PROMPT:
         print(f"📋 日志文件位置: {log_filename}")
-        print(f"🚀 执行环境变量请求: {prompt}")
+        print(f"🚀 执行配置请求: {prompt}")
         run_with_langchain(prompt, ollama, tools)
     else:
-        print("📋 日志文件位置: {log_filename}")
-        print("🎮 未设置AGENT_PROMPT环境变量，启动交互模式...")
+        print(f"📋 日志文件位置: {log_filename}")
+        print("🎮 未设置AGENT_PROMPT配置，启动交互模式...")
         run_interactive_mode(ollama, tools)
 
 
