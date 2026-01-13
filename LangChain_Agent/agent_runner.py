@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 
 from .ollama_adapter import OllamaClient
-from ce_tools import make_langchain_tools, build_tool_metadata
+from .ce_tools import make_langchain_tools, build_tool_metadata
 
 load_dotenv()
 

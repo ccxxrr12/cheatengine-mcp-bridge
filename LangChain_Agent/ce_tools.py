@@ -9,8 +9,8 @@ import json
 import logging
 from typing import Any, Callable, Dict, List
 
-from result_parsers import parse_generic_ce_result
-from error_policy import retry_on_exception, require_destructive_approval
+from .result_parsers import parse_generic_ce_result
+from .error_policy import retry_on_exception, require_destructive_approval
 
 logger = logging.getLogger(__name__)
 
